@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lucky Draw · CMS & Stage</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header>
+    <div class="container row">
+      <div class="tabs">
+        <button id="tabCMS" class="btn primary active" type="button">後台 CMS</button>
+        <button id="tabPublic" class="btn" type="button">公開顯示</button>
+      </div>
+      <div class="bar" style="margin-left:auto">
+        <a id="landingLink" class="btn primary" href="./landing.html" target="_blank" role="button">手機報名頁 ↗</a>
+        <button id="fullscreen" class="btn" type="button">⛶ 全屏</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- PUBLIC view (kept for when you click top "公開顯示") -->
+  <main class="container" id="publicView" style="display:none">
+    <section class="card stage">
+      <img id="logoEl" class="logo" alt="logo" />
+      <div id="bgEl" class="bg"></div>
+      <canvas id="confetti"></canvas>
+      <div class="stage-inner">
+        <div id="banner" class="banner"></div>
+        <div class="row prize-header">
+          <div class="prize-title" id="publicPrize">—</div>
+          <span class="stat" id="prizeLeftInline">此獎尚餘：0</span>
+        </div>
+        <div id="pollPublicRow" class="bar" style="justify-content:center; display:none; margin-bottom:10px">
+          <span class="stat">投票掃描</span>
+          <div id="pollPublicQR" class="qr-box"></div>
+        </div>
+        <div id="currentBatch" class="batch-grid"></div>
+        <!-- Poll results board (public screen) -->
+          <section id="pollResultBoard" class="result-board" style="display:none">
+            <h2 id="prTitle" class="prize-title"></h2>
+            <div id="prBars" class="bars-vertical"></div>
+            <div id="prHint" class="pill" style="margin-top:8px"></div>
+          </section>
+
+        <div class="winners-list" id="winnersChips"></div>
+        <div class="bar" style="justify-content:center;margin-top:12px">
+          <span class="stat" id="statsRemain">剩餘：0</span>
+          <span class="stat" id="statsWinners">已得獎：0</span>
+          <span class="stat" id="statsPrizeLeft">此獎尚餘：0</span>
+        </div>
+      </div>
+    </section>
+    <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
+  </main>
+
+  <!-- CMS view -->
+  <main class="container" id="cmsView">
+    <div class="cms-grid">
+      <!-- LEFT SIDEBAR: events & subpages -->
+      <aside class="sidebar">
+        <div class="sidebar-title">活動清單</div>
+        <div id="eventList" class="event-list"></div>
+        <div class="sidebar-form">
+          <input id="newEventName" placeholder="新增活動名稱" />
+          <input id="newClientName" placeholder="客戶名稱 (可選)" />
+          <button id="addEvent" class="btn primary" type="button">+ 新活動</button>
+        </div>
+
+        <hr style="border-color:rgba(255,255,255,.12)">
+
+        <div class="sidebar-title">功能頁面</div>
+        <nav id="cmsNav" class="nav-list">
+          <button class="nav-item active" data-target="pageEvent">活動資料</button>
+          <button class="nav-item" data-target="pageRoster">名單</button>
+          <button class="nav-item" data-target="pagePrizes">獎品（匯入）</button>
+          <button class="nav-item" data-target="pageStage">抽獎舞台</button>
+          <button class="nav-item" data-target="pageQuestions">報名題目</button>
+          <button class="nav-item" data-target="pagePoll">投票</button>
+          <button class="nav-item" data-target="pageStorage">儲存 / 備份</button>
+          <button class="nav-item" data-target="pageEventsManage">活動管理</button>
+        </nav>
+      </aside>
+
+      <!-- RIGHT: subpages -->
+      <section class="cms-main">
+        <!-- 活動資料 -->
+        <section class="card subpage" id="pageEvent">
+          <div class="row" style="margin-bottom:8px">
+            <div><strong>正在編輯：</strong><span id="currentEventName">—</span></div>
+            <div class="pill" id="currentClient">客戶：—</div>
+            <div class="pill" id="currentIdLabel">ID：—</div>
+          </div>
+
+          <h3>活動資料（此活動專屬）</h3>
+          <div class="grid-2">
+            <label>活動名稱 <input id="evTitle" /></label>
+            <label>客戶名稱 <input id="evClient" /></label>
+            <label>日期時間 <input id="evDateTime" placeholder="2025-09-01 18:30–22:00" /></label>
+            <label>地點名稱 <input id="evVenue" placeholder="會展 Hall 3" /></label>
+            <label>地址 <input id="evAddress" placeholder="灣仔港灣道 1 號" /></label>
+            <label>Google 地圖連結 <input id="evMapUrl" placeholder="https://maps..." /></label>
+            <label>巴士 <textarea id="evBus" rows="3"></textarea></label>
+            <label>地鐵/火車 <textarea id="evTrain" rows="3"></textarea></label>
+            <label>泊車 <textarea id="evParking" rows="3"></textarea></label>
+            <label>備註 <textarea id="evNotes" rows="3"></textarea></label>
+          </div>
+          <div class="bar" style="margin-top:8px">
+            <label class="stat">背景圖 <input type="file" id="bg" accept="image/*" /></label>
+            <label class="stat">Logo <input type="file" id="logo" accept="image/*" /></label>
+            <label class="stat">橫幅 Banner <input type="file" id="bannerInput" accept="image/*" /></label>
+            <button id="saveEventInfo" class="btn primary" type="button">💾 儲存活動資訊</button>
+          </div>
+        </section>
+
+        <!-- 名單 -->
+        <section class="card subpage" id="pageRoster" style="display:none">
+          <h3>名單管理（僅此活動）</h3>
+          <div class="row">
+            <label class="stat">CSV 名單 <input type="file" id="csv" accept=".csv" /></label>
+            <button id="preset" class="btn primary" type="button">載入 CSV</button>
+            <button id="exportCheckin" class="btn" type="button">匯出已報到名單</button>
+            <button id="exportSession" class="btn" type="button">匯出會話</button>
+            <label class="stat">導入會話 <input type="file" id="importSession" accept=".json" /></label>
+          </div>
+          <div class="bar">
+            <input id="search" type="text" placeholder="搜尋姓名/部門" />
+            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="20" value="12" /></label>
+            <button id="newPage" class="btn" type="button">+ 加新抽獎頁</button>
+            <select id="pageSelect"></select>
+          </div>
+          <div class="bar" style="margin-top:10px; align-items:flex-end">
+          <label>姓名 <input id="addName" placeholder="例如：陳小明" /></label>
+          <label>部門 <input id="addDept" placeholder="例如：營運部" /></label>
+          <label class="stat">已報到 <input type="checkbox" id="addPresent" /></label>
+          <button id="addPerson" class="btn" type="button">+ 新增參加者</button>
+        </div>
+
+        <table class="table" style="margin-top:8px">
+          <thead>
+            <tr>
+              <th style="min-width:200px">姓名</th>
+              <th style="min-width:160px">部門</th>
+              <th style="min-width:120px">狀態</th>
+              <th style="min-width:200px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="rosterRows"></tbody>
+        </table>
+
+        </section>
+
+        <!-- 獎品（匯入） -->
+        <section class="card subpage" id="pagePrizes" style="display:none">
+          <h3>獎品管理（CSV / Excel 匯入）</h3>
+          <div class="row" style="margin-bottom:8px">
+            <label class="stat">匯入獎品：<input type="file" id="prizeFile" accept=".csv,.xlsx" /></label>
+            <button id="importPrizes" class="btn primary" type="button">匯入獎品</button>
+            <span class="pill">CSV 欄位：name, quota（可選）</span>
+          </div>
+          <div class="bar" style="margin-bottom:8px">
+            <input id="newPrizeName" placeholder="獎品名稱（例如：頭獎 iPad）" />
+            <label>名額 <input type="number" id="newPrizeQuota" value="1" min="1" /></label>
+            <button id="addPrize" class="btn" type="button">+ 新增獎品</button>
+            <input id="prizeSearch" placeholder="搜尋獎品名稱" />
+          </div>
+          <table>
+            <thead><tr><th>使用中</th><th>獎品名稱</th><th>名額</th><th>已中獎</th><th>操作</th></tr></thead>
+            <tbody id="prizeRows"></tbody>
+          </table>
+        </section>
+
+        <!-- 抽獎舞台 -->
+        <section class="card subpage" id="pageStage" style="display:none">
+          <div class="bar" style="margin-bottom:8px">
+            <label>目前抽取批量 <input type="number" id="batchCount" value="1" min="1" /></label>
+            <button id="countdownDraw" class="btn primary" type="button">⏱️ 倒數抽獎</button>
+            <button id="draw" class="btn" type="button">🎲 即抽</button>
+            <button id="confirm" class="btn success" type="button" disabled>✅ 上台確認</button>
+            <button id="undo" class="btn" type="button" disabled>↩️ Undo</button>
+            <button id="exportWinners" class="btn" type="button">匯出得獎 CSV</button>
+            <a id="openFullStage" class="btn" href="#" target="_blank">在新視窗開啟全屏舞台 ↗</a>
+          </div>
+
+          <!-- embed the same stage UI here -->
+          <!-- embed the same stage UI here -->
+          <section class="card stage">
+            <img id="logoEl2" class="logo" alt="logo" />
+            <div id="bgEl2" class="bg"></div>
+            <canvas id="confetti2"></canvas>
+            <div class="stage-inner">
+              <div id="banner2" class="banner"></div>
+              <div class="row prize-header">
+                <div class="prize-title" id="publicPrize2">—</div>
+                <span class="stat" id="prizeLeftInline2">此獎尚餘：0</span>
+              </div>
+              <div id="currentBatch2" class="batch-grid"></div>
+              <div class="winners-list" id="winnersChips2"></div>
+              <div class="bar" style="justify-content:center;margin-top:12px">
+              <span class="stat" id="statsRemain2">剩餘：0</span>
+              <span class="stat" id="statsWinners2">已得獎：0</span>
+            </div>
+            </div>
+            <!-- NEW: CMS overlay -->
+            <div class="overlay" id="overlay2"><div class="count" id="count2">3</div></div>
+          </section>
+            <!-- Re-roll history list (CMS only) -->
+            <section class="card" id="rerollPanel" style="margin-top:12px">
+              <h4 style="margin:0 0 8px">重抽記錄</h4>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="min-width:160px">時間</th>
+                    <th>獎項</th>
+                    <th>更換</th>
+                    <th style="min-width:180px">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="rerollRows"></tbody>
+              </table>
+            </section>
+
+        </section>
+
+        <!-- 報名題目 -->
+        <section class="card subpage" id="pageQuestions" style="display:none">
+          <h3>自訂參加者問題（手機報名頁）</h3>
+          <div class="bar" style="margin-bottom:8px">
+            <input id="newQText" placeholder="問題文字" />
+            <select id="newQType">
+              <option value="boolean">是/否</option>
+              <option value="select">下拉選擇</option>
+              <option value="text">文字輸入</option>
+            </select>
+            <input id="newQOptions" placeholder="選項（用逗號分隔）" />
+            <label class="stat">必填 <input type="checkbox" id="newQRequired" /></label>
+            <button id="addQ" class="btn primary" type="button">+ 新增問題</button>
+          </div>
+          <table>
+            <thead><tr><th>問題</th><th>類型</th><th>選項</th><th>必填</th><th>操作</th></tr></thead>
+            <tbody id="questionsTable"></tbody>
+          </table>
+        </section>
+
+                <section class="card subpage" id="pagePoll" style="display:none">
+          <h3>投票（每活動可建立多個）</h3>
+          <div class="grid-2">
+            <div class="card" style="padding:12px">
+              <h4 style="margin-top:0">投票列表</h4>
+              <div id="pollList"></div>
+              <div class="bar" style="margin-top:8px">
+                <button id="addPoll" class="btn" type="button">+ 新增投票</button>
+                <button id="deletePoll" class="btn danger" type="button">刪除所選</button>
+              </div>
+            </div>
+            <div class="card" style="padding:12px">
+              <h4 style="margin-top:0">編輯投票 <span id="activePollBadge" class="pill"></span></h4>
+              <label>題目 <input id="pollQ" placeholder="請輸入題目" /></label>
+              <div id="pollOptions" style="margin:10px 0"></div>
+              <div class="bar">
+                <button id="addPollOpt" class="btn" type="button">+ 新增選項</button>
+                <button id="savePoll" class="btn primary" type="button">💾 儲存</button>
+                <button id="setActivePoll" class="btn" type="button">設為目前投票</button>
+                <button id="togglePollPublic" class="btn warning" type="button">🔕 隱藏投票（公眾頁）</button>
+                <button id="publishPollNow" class="btn" type="button">⬆︎ 立即發佈到雲端</button>
+                <button id="pingFirebase" class="btn" type="button">🛰 測試連線</button>
+              </div>
+
+              <hr/>
+              <h4 style="margin-top:8px">投票 QR / 連結</h4>
+              <div class="bar" style="align-items:flex-end">
+                <button id="openPollLanding" class="btn" type="button">開啟投票頁 ↗</button>
+                <button id="activatePollResult" class="btn success" type="button">啟用結果（公眾頁）</button>
+                <button id="switchToDraw" class="btn" type="button">切換回抽獎（公眾頁）</button>
+              </div>
+              <div id="pollQRBox" class="qr-box" style="margin-top:8px"></div>
+              <p class="pill">提示：每個投票有不同的 QR，設為「目前投票」後，公眾頁會顯示其 QR。</p>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 儲存 / 備份 -->
+        <section class="card subpage" id="pageStorage" style="display:none">
+          <h3>儲存 / 備份 / 歷史版本</h3>
+          <div class="bar" style="margin-bottom:8px">
+            <button id="saveSnapshot" class="btn primary" type="button">💾 儲存快照</button>
+            <button id="exportCurrentEvent" class="btn" type="button">下載目前活動 JSON</button>
+          </div>
+          <div class="pill">已儲存的快照（本機瀏覽器）：</div>
+          <table>
+            <thead>
+              <tr>
+                <th>名稱</th><th>客戶</th><th>ID</th><th>顯示於活動清單</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="snapshotsTable"></tbody>
+          </table>
+        </section>
+
+        <!-- NEW: 活動管理（建立 / 列表 / 編輯 / 複製 / 刪除 / 切換） -->
+        <section class="card subpage" id="pageEventsManage" style="display:none">
+          <h3>活動管理</h3>
+
+          <div class="grid-2" style="margin-bottom:10px">
+            <div class="card" style="padding:12px">
+              <h4 style="margin:0 0 8px">建立新活動</h4>
+              <label>活動名稱 <input id="emNewName" placeholder="例如：2025 週年晚宴" /></label>
+              <label>客戶名稱 <input id="emNewClient" placeholder="例如：ABC 集團" /></label>
+              <div class="bar" style="margin-top:8px">
+                <button id="emCreate" class="btn primary" type="button">+ 建立活動</button>
+              </div>
+              <p class="pill">建立後會自動切換至該活動。</p>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <h4 style="margin:0 0 8px">快速複製目前活動</h4>
+              <label>新活動名稱 <input id="emCloneName" placeholder="複製：2025 週年晚宴（副本）" /></label>
+              <div class="bar" style="margin-top:8px">
+                <button id="emClone" class="btn" type="button">🔁 複製目前活動</button>
+              </div>
+              <p class="pill">會連同活動資料、名單、獎品與提問一併複製。</p>
+            </div>
+          </div>
+
+          <h4 style="margin:12px 0 8px">所有活動</h4>
+          <div class="bar" style="margin-bottom:8px">
+            <input id="emSearch" placeholder="搜尋活動名稱 / 客戶" />
+          </div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>名稱</th><th>客戶</th><th>ID</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="emTable"></tbody>
+          </table>
+        </section>
+
+      </section>
+    </div>
+  </main>
+
+  <footer>左側分頁小頁面 · 抽獎舞台獨立分頁 · 支援獎品 CSV/Excel 匯入（需可選 XLSX 解析器） · 本機快照儲存</footer>
+
+  <!-- Optional XLSX reader (only needed if你要直接讀 .xlsx；不加也可用 CSV) -->
+  
+  <script src="./qrcode.min.js"></script>
+  <!-- SheetJS (XLSX) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+  <title>活動報名 · 參加者入口（手機優先）</title>
+  <link rel="stylesheet" href="./landing.css" />
+</head>
+<body>
+  <div id="banner" class="lp-banner"></div>
+  <main class="lp-wrap">
+    <section class="lp-card lp-hero">
+      <img id="logo" class="lp-logo" alt="logo" />
+      <h1 id="evTitle">活動</h1>
+      <p id="evDateTime" class="lp-muted"></p>
+      <p id="evVenue"></p>
+      <p id="evAddress" class="lp-muted"></p>
+    </section>
+    <section class="lp-card">
+      <h3>報名 / 登記</h3>
+      <form id="signupForm" class="lp-form">
+        <label class="lp-field"><span>姓名</span><input id="signupName" required /></label>
+        <label class="lp-field"><span>部門</span><input id="signupDept" required /></label>
+        <div id="dynamicQuestions" class="lp-questions"></div>
+        <button class="lp-primary" type="submit">提交報名</button>
+      </form>
+      <p id="signupMsg" class="lp-msg"></p>
+    </section>
+        <!-- 投票：投票與結果（由 URL 參數控制） -->
+    <section class="lp-card" id="pollCard" style="display:none">
+      <h3 id="pollTitle">投票</h3>
+
+      <!-- 投票視圖 -->
+      <div id="pollVoteView" style="display:none">
+        <div id="pollOptionsWrap" class="lp-poll-options"></div>
+        <button id="submitVote" class="lp-primary" type="button" disabled>提交投票</button>
+        <p id="voteMsg" class="lp-msg"></p>
+      </div>
+
+      <!-- 結果視圖 -->
+      <div id="pollResultView" style="display:none">
+        <div id="resultBars" class="lp-result-bars"></div>
+        <p class="lp-muted" id="totalVotesHint"></p>
+      </div>
+    </section>
+
+    <section class="lp-card">
+      <h3>交通資訊</h3>
+      <div class="lp-grid-2">
+        <div><h4>巴士</h4><p id="evBus" class="lp-muted"></p></div>
+        <div><h4>地鐵 / 火車</h4><p id="evTrain" class="lp-muted"></p></div>
+        <div><h4>泊車</h4><p id="evParking" class="lp-muted"></p></div>
+      </div>
+      <a id="mapBtn" class="lp-primary lp-link" target="_blank">在地圖打開</a>
+      <p id="evNotes" class="lp-muted" style="margin-top:8px"></p>
+    </section>
+  </main>
+  <script src="./landing.js"></script>
+</body>
+</html>

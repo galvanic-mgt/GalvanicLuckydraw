@@ -1,0 +1,31 @@
+<!-- vote.html -->
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>投票頁（手機）</title>
+  <link rel="stylesheet" href="./landing.css" />
+</head>
+<body>
+  <main class="lp-wrap">
+    <section class="lp-card lp-hero" style="text-align:center">
+      <h1 id="pollTitle">投票</h1>
+      <p class="lp-muted" id="pollSubtitle">請選擇一項提交</p>
+    </section>
+
+    <section class="lp-card" id="pollCard">
+      <div id="pollOptionsWrap" class="lp-poll-options"></div>
+      <button id="submitVote" class="lp-primary" type="button" disabled>提交投票</button>
+      <p id="voteMsg" class="lp-msg"></p>
+    </section>
+
+    <section class="lp-card lp-hero" style="display:none" id="thanksCard">
+      <h3>✅ 已提交，感謝你的參與！</h3>
+      <p class="lp-muted">請留意舞台大屏幕上的結果。</p>
+    </section>
+  </main>
+
+  <script src="./vote.js"></script>
+</body>
+</html>

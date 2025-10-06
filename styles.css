@@ -1,0 +1,284 @@
+:root{--bg:#0b0f1a;--card:#121a2b;--muted:#90a4c0;--accent:#3bd;--success:#4cd964;--danger:#ff3b30;--warning:#ffd60a}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,Arial;color:#eef;background:var(--bg)}
+header{position:sticky;top:0;background:linear-gradient(180deg,rgba(11,15,26,.95),rgba(11,15,26,.82));backdrop-filter:blur(8px);z-index:10;border-bottom:1px solid rgba(255,255,255,.08)}
+.container{max-width:1320px;margin:0 auto;padding:14px 16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.card{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px}
+input,button,select,textarea{padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#0e1626;color:#eef}
+textarea{resize:vertical}
+input[type="number"]{width:90px}
+button{cursor:pointer}
+.btn{padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#0e1626;color:#eef;display:inline-block;text-decoration:none}
+.primary{background:var(--accent)!important;color:#012!important;border:none}
+.success{background:var(--success)!important;color:#012!important;border:none}
+.danger{background:var(--danger)!important;color:#fff!important;border:none}
+.warning{background:var(--warning)!important;color:#121!important}
+button:disabled{opacity:.55;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.pill{font-size:12px;color:#c9d3e7;opacity:.85}
+.bar{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;font-size:13px}
+.tabs{display:flex;gap:8px}
+.tabs .active{outline:2px solid var(--accent)}
+footer{opacity:.6;text-align:center;padding:10px}
+.stage{position:relative;min-height:60vh;border-radius:18px;background:radial-gradient(1200px 600px at 50% 0%,rgba(59,221,255,.18),transparent 60%),rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);overflow:hidden}
+.bg{position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(6px) brightness(.6);opacity:.6}
+.logo{position:absolute;left:16px;top:16px;z-index:2;max-width:200px;max-height:80px;opacity:.95}
+.stage-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100%;padding:24px 32px;text-align:center}
+.banner{width:100%;height:220px;background-size:contain;background-repeat:no-repeat;background-position:center;margin-bottom:16px;border-radius:12px}
+@media (min-width:1600px){ .banner{height:300px} }
+.prize-title{font-size:clamp(24px,2.6vw,52px);opacity:.95;margin:0 auto 14px;font-weight:800;}
+.batch-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:stretch;width:100%;max-width:1800px;margin:0 auto 12px}
+.winner-card{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;border:3px solid rgba(255,255,255,.75);border-radius:18px;padding:22px 16px;background:rgba(0,0,0,.25);box-shadow:0 8px 20px rgba(0,0,0,.25)}
+.winner-card .name{font-size:clamp(42px,4.5vw,96px);line-height:1.05;font-weight:1000;letter-spacing:.5px;text-shadow:0 6px 24px rgba(0,0,0,.45)}
+.winner-card .dept{margin-top:6px;font-size:clamp(20px,2vw,36px);opacity:.95;color:#d8e2ff;font-weight:600}
+.winners-list{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+.chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:6px 12px;font-size:16px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:50}
+.overlay.show{display:flex}
+.count{font-size:clamp(80px,12vw,220px);font-weight:900;animation:pump .6s ease both}
+@keyframes pump{0%{transform:scale(.6);opacity:.2}60%{transform:scale(1.1);opacity:1}100%{transform:scale(1)}}
+#confetti{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:9999; /* was 40 — ensure it's above stage, banners, etc. */
+}
+body.public-mode header{display:none}
+body.public-mode .container{max-width:100vw;padding:0 0}
+body.public-mode #publicView .stage{min-height:100vh;border-radius:0;border:none}
+.cms-grid{display:grid;grid-template-columns:280px 1fr;gap:12px}
+.sidebar{position:sticky;top:76px;align-self:start;background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px;height:max-content}
+.sidebar-title{font-weight:800;margin-bottom:8px}
+.event-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.event-item{display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);cursor:pointer;background:rgba(255,255,255,.03)}
+.event-item.active{outline:2px solid var(--accent);background:rgba(59,221,255,.07)}
+.event-name{font-weight:800}
+.event-meta{font-size:12px;color:#cfe}
+.sidebar-form{display:flex;flex-direction:column;gap:8px}
+.cms-main{display:flex;flex-direction:column;gap:12px}
+.qr-box{width:224px;height:224px;display:flex;align-items:center;justify-content:center;background:#0e1626;border:1px solid rgba(255,255,255,.12);border-radius:12px}
+/* ... keep your existing styles ... */
+
+/* left nav items */
+.nav-list { display:flex; flex-direction:column; gap:6px; margin-top:8px }
+.nav-item { text-align:left; width:100%; padding:10px 12px; border-radius:12px; background:#0e1626; border:1px solid rgba(255,255,255,.12); color:#eef; cursor:pointer }
+.nav-item.active { outline:2px solid var(--accent); background:rgba(59,221,255,.08) }
+
+/* embedded stage (pageStage) mirrors main stage visuals */
+#pageStage .stage .logo { max-width:160px; max-height:64px }
+
+/* simple table styling for Events Manage */
+.table { width:100%; border-collapse:separate; border-spacing:0 8px }
+.table th, .table td { padding:10px 12px; text-align:left }
+.table tr { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12) }
+
+/* Embedded stage inside CMS: scale neatly with the card width */
+#pageStage .stage {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: auto;            /* override global min-height:60vh */
+  position: relative;
+}
+
+/* Slightly smaller banner for the embedded stage */
+#pageStage .banner {
+  height: clamp(100px, 18vh, 220px);
+}
+
+/* Let the grid pack more flexibly on narrow CMS widths */
+#pageStage .batch-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Tweak typography down a notch for the embedded stage */
+#pageStage .winner-card .name { 
+  font-size: clamp(28px, 3.2vw, 64px);
+}
+#pageStage .winner-card .dept { 
+  font-size: clamp(14px, 1.8vw, 28px);
+}
+
+/* A touch less padding so it breathes on smaller widths */
+#pageStage .stage .stage-inner {
+  padding: clamp(12px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px);
+}
+
+body.public-mode .reroll-btn { display: none !important; }
+
+#rerollPanel .table tr { background:rgba(255,255,255,.05); }
+#rerollPanel .swap { font-weight:600 }
+#rerollPanel .swap .old { opacity:.75; text-decoration:line-through }
+#rerollPanel .swap .arrow { opacity:.6; margin:0 6px }
+
+.badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px }
+.badge.present { background:rgba(76,217,100,.15); border:1px solid rgba(76,217,100,.35); color:#d0ffd8 }
+.badge.absent  { background:rgba(255,59,48,.10); border:1px solid rgba(255,59,48,.28); color:#ffd7d4 }
+
+/* Prize header precise alignment */
+.prize-header{
+  display:flex;
+  align-items:center;        /* center the pill to the title’s visual middle */
+  justify-content:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.prize-header .prize-title{
+  margin:0;
+  line-height:3;           /* keep big title tight so centering is predictable */
+}
+
+.prize-header .stat{
+  display:inline-flex;       /* shrink to content and allow centering of text */
+  align-items:center;        /* center text within the pill vertically */
+  line-height:1;             /* remove extra vertical slack */
+  padding:6px 12px;          /* slimmer pill height */
+  border-radius:12px;
+  /* micro-nudge to visually align with cap height of big title */
+  transform: translateY(-1px);
+}
+
+
+#statsPrizeLeft {
+  display: none !important;
+}
+
+/* Hide stats in Public view */
+body.public-mode #statsRemain,
+body.public-mode #statsWinners {
+  display: none !important;
+}
+
+/* In CMS (default), keep them visible */
+#statsRemain,
+#statsWinners {
+  display: inline-block;
+}
+
+/* When a poll is set active and we want the QR centered on the public stage */
+body.public-mode.poll-only #publicView .prize-header,
+body.public-mode.poll-only #publicView #currentBatch,
+body.public-mode.poll-only #publicView #winnersChips,
+body.public-mode.poll-only #publicView #statsRemain,
+body.public-mode.poll-only #publicView #statsWinners,
+body.public-mode.poll-only #publicView #statsPrizeLeft {
+  display: none !important;
+}
+
+body.public-mode.poll-only #publicView #pollPublicRow {
+  display: flex !important;
+  margin-top: 6vh;
+}
+
+body.public-mode.poll-only #publicView .stage-inner {
+  justify-content: center !important;
+  min-height: 70vh; /* keep it visually centered vertically */
+}
+
+/* Bigger, responsive QR while centered */
+body.public-mode.poll-only #publicView .qr-box {
+  width: min(46vw, 420px);
+  height: min(46vw, 420px);
+}
+
+/* ==== Poll results (public) ==== */
+.result-board{
+  width:100%;
+  max-width:1600px;
+  margin:10px auto 0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+.bars-vertical{
+  display:flex;
+  align-items:flex-end;      /* bottom baseline */
+  justify-content:center;
+  gap:18px;
+  width:100%;
+  height:52vh;               /* chart height */
+  max-height:720px;
+  padding:10px 16px 0;
+}
+
+/* one column */
+.vbar{
+  position:relative;
+  width:min(12vw,160px);
+  min-width:88px;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  align-items:center;
+}
+
+/* background pillar */
+.vbar .shaft{
+  position:relative;
+  width:70%;
+  height:100%;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.06);
+  overflow:hidden;
+  display:flex;
+  align-items:flex-end;       /* bottom fill */
+}
+
+/* animated fill (height grows 0 -> pct) */
+.vbar .fill{
+  width:100%;
+  height:0%;
+  transition:height .8s ease;
+  background:linear-gradient(180deg, rgba(59,221,255,.9), rgba(59,221,255,.55));
+}
+
+/* option label under pillar */
+.vbar .label{
+  margin-top:8px;
+  font-weight:800;
+  text-align:center;
+  max-width:92%;
+  line-height:1.2;
+}
+
+/* percentage bubble at top of the pillar */
+.vbar .pct{
+  position:absolute;
+  top:-26px;
+  font-size:14px;
+  opacity:.9;
+}
+
+/* Crown drop */
+.vbar .crown{
+  position:absolute;
+  top:-64px;                 /* starts off-screen */
+  font-size:46px;
+  line-height:1;
+  animation:crown-drop-vert .7s ease .1s both;
+}
+@keyframes crown-drop-vert{
+  from{ transform:translateY(-30px) scale(.6); opacity:.0 }
+  to  { transform:translateY(0)     scale(1);   opacity:1  }
+}
+
+/* When results board is showing on public screen, hide the usual stage bits */
+body.public-mode.public-result #publicView .prize-header,
+body.public-mode.public-result #publicView #currentBatch,
+body.public-mode.public-result #publicView #winnersChips,
+body.public-mode.public-result #publicView #statsRemain,
+body.public-mode.public-result #publicView #statsWinners,
+body.public-mode.public-result #publicView #statsPrizeLeft,
+body.public-mode.public-result #publicView #pollPublicRow{
+  display:none !important;
+}
+body.public-mode.public-result #publicView .stage-inner{
+  justify-content:flex-start;
+}
