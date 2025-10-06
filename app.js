@@ -1306,49 +1306,94 @@ function renderRosterList(){
 
   const q = (searchInput?.value || '').trim().toLowerCase();
   const filtered = (state.people || []).filter(p =>
-    (!q) || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q)
+    (!q) ||
+    (p.name||'').toLowerCase().includes(q) ||
+    (p.dept||'').toLowerCase().includes(q)
   );
 
-    // Code input
-  const codeIn = document.createElement('input'); codeIn.placeholder='碼'; codeIn.value = p.code || '';
-  codeIn.onchange = ()=>{ p.code = (codeIn.value||'').trim(); store.save(state); };
+  const eventId = store.current().id;
 
-  // Table input
-  const tableIn = document.createElement('input'); tableIn.placeholder='桌'; tableIn.value = p.table || '';
-  tableIn.onchange = ()=>{ p.table = (tableIn.value||'').trim(); store.save(state); };
-
-  // Seat input
-  const seatIn = document.createElement('input'); seatIn.placeholder='座'; seatIn.value = p.seat || '';
-  seatIn.onchange = ()=>{ p.seat = (seatIn.value||'').trim(); store.save(state); };
-
-  // ...append these to new <td> columns in your row...
-
-  const c = (p.code||'').trim(); const eventId = store.current().id;
-if (c) {
-  FB.patch(`/events/${eventId}/guests/${encodeURIComponent(c)}`, {
-    arrived: !!p.checkedIn,
-    eligible: !!p.checkedIn
-  }).catch(()=>{});
-}
-
-  filtered.forEach((p, idxInFiltered)=>{
+  filtered.forEach((p)=>{
     const tr = document.createElement('tr');
 
+    // --- code
+    const tdCode = document.createElement('td');
+    const codeIn = document.createElement('input');
+    codeIn.placeholder = '碼';
+    codeIn.value = p.code || '';
+    codeIn.onchange = ()=>{
+      p.code = (codeIn.value || '').trim();
+      store.save(state);
+      // also mirror code change to cloud record if we already have one
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
+          name: p.name || '',
+          dept: p.dept || '',
+          table: p.table || '',
+          seat: p.seat || '',
+          arrived: !!p.checkedIn,
+          eligible: !!p.checkedIn
+        }).catch(()=>{});
+      }
+    };
+    tdCode.appendChild(codeIn);
+
+    // --- name
     const tdName = document.createElement('td');
+    const inName = document.createElement('input');
+    inName.value = p.name || '';
+    inName.onchange = ()=>{
+      p.name = inName.value.trim();
+      store.save(state);
+      rebuildRemainingFromPeople();
+      renderRosterList();
+    };
+    tdName.appendChild(inName);
+
+    // --- dept
     const tdDept = document.createElement('td');
+    const inDept = document.createElement('input');
+    inDept.value = p.dept || '';
+    inDept.onchange = ()=>{
+      p.dept = inDept.value.trim();
+      store.save(state);
+      rebuildRemainingFromPeople();
+      renderRosterList();
+    };
+    tdDept.appendChild(inDept);
+
+    // --- table
+    const tdTable = document.createElement('td');
+    const tableIn = document.createElement('input');
+    tableIn.placeholder = '桌';
+    tableIn.value = p.table || '';
+    tableIn.onchange = ()=>{
+      p.table = (tableIn.value || '').trim();
+      store.save(state);
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { table: p.table }).catch(()=>{});
+      }
+    };
+    tdTable.appendChild(tableIn);
+
+    // --- seat
+    const tdSeat = document.createElement('td');
+    const seatIn = document.createElement('input');
+    seatIn.placeholder = '座';
+    seatIn.value = p.seat || '';
+    seatIn.onchange = ()=>{
+      p.seat = (seatIn.value || '').trim();
+      store.save(state);
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { seat: p.seat }).catch(()=>{});
+      }
+    };
+    tdSeat.appendChild(seatIn);
+
+    // --- status + toggle
     const tdStatus = document.createElement('td');
     const tdOps = document.createElement('td');
 
-    // inline edit name/dept
-    const inName = document.createElement('input'); inName.value = p.name || '';
-    const inDept = document.createElement('input'); inDept.value = p.dept || '';
-    inName.onchange = ()=>{ p.name = inName.value.trim(); store.save(state); rebuildRemainingFromPeople(); renderRosterList(); };
-    inDept.onchange = ()=>{ p.dept = inDept.value.trim(); store.save(state); rebuildRemainingFromPeople(); renderRosterList(); };
-
-    tdName.appendChild(inName);
-    tdDept.appendChild(inDept);
-
-    // present / absent badge + toggle
     const badge = document.createElement('span');
     badge.className = 'badge ' + (p.checkedIn ? 'present' : 'absent');
     badge.textContent = p.checkedIn ? '已報到' : '未報到';
@@ -1361,42 +1406,55 @@ if (c) {
       rebuildRemainingFromPeople();
       store.save(state);
       renderRosterList();
-      updatePublicPanel(); // update remaining/winners stats
+      updatePublicPanel();
+      // mirror to cloud eligibility
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
+          arrived: !!p.checkedIn,
+          eligible: !!p.checkedIn
+        }).catch(()=>{});
+      }
     };
 
     tdStatus.appendChild(badge);
-    tdOps.appendChild(toggle);
 
-    // delete
-    const del = document.createElement('button');
-    del.className = 'btn danger';
-    del.textContent = '刪除';
-    del.onclick = ()=>{
-      // remove from people, remaining; keep winners intact if they already won
-      state.people = state.people.filter(x => !(x.name===p.name && (x.dept||'')===(p.dept||'')));
-      rebuildRemainingFromPeople();
-      store.save(state);
-      renderRosterList();
-      updatePublicPanel();
-    };
-
-    // add “抽用”快速加入/移除剩餘（可選）
     const quick = document.createElement('button');
     quick.className = 'btn';
     quick.textContent = p.checkedIn ? '從抽選移除' : '加入抽選';
     quick.onclick = ()=>{
       p.checkedIn = !p.checkedIn;
       rebuildRemainingFromPeople();
-      store.save(state); renderRosterList(); updatePublicPanel();
+      store.save(state);
+      renderRosterList();
+      updatePublicPanel();
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
+          arrived: !!p.checkedIn,
+          eligible: !!p.checkedIn
+        }).catch(()=>{});
+      }
     };
 
-    tdOps.appendChild(quick);
-    tdOps.appendChild(del);
+    const del = document.createElement('button');
+    del.className = 'btn danger';
+    del.textContent = '刪除';
+    del.onclick = ()=>{
+      state.people = state.people.filter(x => !(x.name===p.name && (x.dept||'')===(p.dept||'')));
+      rebuildRemainingFromPeople();
+      store.save(state);
+      renderRosterList();
+      updatePublicPanel();
+      // (optional) if you want to also remove cloud record when code exists:
+      // if (p.code) FB.put(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, null).catch(()=>{});
+    };
 
-    tr.append(tdName, tdDept, tdStatus, tdOps);
+    tdOps.append(quick, toggle, del);
+
+    tr.append(tdCode, tdName, tdDept, tdTable, tdSeat, tdStatus, tdOps);
     tbody.appendChild(tr);
   });
 }
+
 
 
     function renderEventsTable(){
