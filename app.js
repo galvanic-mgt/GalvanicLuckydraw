@@ -535,7 +535,28 @@ function renderPrizes(){
 
 // draw
 let currentPick=null;
-function addWinnerRecords(prize, person){ state.winners.push({...person, prizeId:prize.id, prizeName:prize.name, time:new Date().toISOString()}); prize.won.push(person); }
+function addWinnerRecords(prize, person){
+  // existing local writes
+  state.winners.push({...person, prizeId:prize.id, prizeName:prize.name, time:new Date().toISOString()});
+  prize.won.push(person);
+
+  // Update local person
+  const me = (state.people||[]).find(p => p.name===person.name && (p.dept||'')===(person.dept||''));
+  if (me) {
+    me.receivedGift = true;
+    me.gift = { id:String(prize.id), name:prize.name, awardedAt: Date.now() };
+  }
+
+  // Cloud mirror (if code known)
+  const code = me?.code || person.code || '';
+  const eventId = store.current().id;
+  if (code) {
+    FB.patch(`/events/${eventId}/guests/${encodeURIComponent(code)}`, {
+      receivedGift: true,
+      gift: { id:String(prize.id), name:prize.name, awardedAt: Date.now() }
+    }).catch(()=>{ /* non-blocking */ });
+  }
+}
 function removeWinnerRecords(prize, person){
   for(let i=state.winners.length-1;i>=0;i--){ const w=state.winners[i]; if(w.name===person.name && w.prizeId===prize.id){ state.winners.splice(i,1); break; } }
   for(let i=prize.won.length-1;i>=0;i--){ const w=prize.won[i]; if(w.name===person.name){ prize.won.splice(i,1); break; } }
@@ -945,6 +966,45 @@ searchInput.addEventListener('input', renderRosterList);
     setActivePage('pageEventsManage');
 });
 
+// === Merge cloud guests into local state (multi-device sync) ===
+(async ()=>{
+  try {
+    const eventId = store.current().id;
+    const cloud = await FB.get(`/events/${eventId}/guests`) || {};
+    const mapKey = (x)=> `${(x.name||'').trim()}||${(x.dept||'').trim()}`;
+    const localMap = new Map((state.people||[]).map(p=>[mapKey(p), p]));
+
+    Object.entries(cloud).forEach(([code, g])=>{
+      const k = mapKey(g);
+      const p = localMap.get(k);
+      if (p) {
+        p.code = code;
+        p.table = g.table || p.table;
+        p.seat  = g.seat  || p.seat;
+        p.checkedIn   = !!g.arrived;
+        p.receivedGift= !!g.receivedGift;
+        p.gift = g.gift || p.gift || { id:null, name:null, awardedAt:null };
+      } else {
+        (state.people = state.people || []).push({
+          name: g.name, dept: g.dept || '',
+          code, table: g.table || '', seat: g.seat || '',
+          checkedIn: !!g.arrived,
+          receivedGift: !!g.receivedGift,
+          gift: g.gift || { id:null, name:null, awardedAt:null }
+        });
+      }
+    });
+
+    // If your app uses remaining/winners lists, rebuild and rerender
+    if (typeof rebuildRemainingFromPeople === 'function') rebuildRemainingFromPeople();
+    store.save(state);
+    if (typeof renderAll === 'function') renderAll();
+  } catch (e) {
+    console.warn('Pull cloud guests failed', e);
+  }
+})();
+
+
 emClone.addEventListener('click', ()=>{
   const proposed = (emCloneName.value || '').trim();
   const finalName = proposed || (`${store.current().name || '活動'}（副本）`);
@@ -995,7 +1055,21 @@ emSearch.addEventListener('input', renderEventsTable);
   csvInput.addEventListener('change', async e=>{
     const f=e.target.files?.[0]; if(!f) return;
     const txt = await f.text(); const header = parseCSV(txt)[0] ? null : null; // noop
-    const people = parseCSV(txt).map(r=>({name:r.name||r['姓名']||'', dept:r.dept||r['部門']||r['department']||''})).filter(p=>p.name);
+    const people = parseCSV(txt).map(r=>({
+      name:  r.name || r['姓名'] || '',
+      dept:  r.dept || r['部門'] || r['department'] || '',
+      code: (r.code || r['碼'] || r['code'] || '').toString().trim(),
+      table: r.table || r['桌'] || r['table'] || '',
+      seat:  r.seat  || r['座位'] || r['seat']  || ''
+    })).filter(p=>p.name);
+    // Guarantee each person has a 4-digit code if not provided/invalid
+    // Guarantee each person has a 4-digit code if not provided/invalid
+    people.forEach(p=>{
+      if (!/^\d{3,8}$/.test(p.code)) {
+        p.code = String(Math.floor(1000 + Math.random()*9000)); // 4 digits
+      }
+    });
+
     if(!people.length){ alert('CSV 內容有問題（需包含 name 或 姓名 欄）。'); return; }
     
     // imported people default to absent; they'll be present after QR check-in or manual toggle
@@ -1003,6 +1077,27 @@ emSearch.addEventListener('input', renderEventsTable);
     state.winners = [];
     state.remaining = []; // only checked-in people belong here
     state.pages=[{id:1}]; state.currentPage=1; state.lastConfirmed=null; state.currentBatch=[];
+    // Cloud-sync guests to RTDB for this event
+      try {
+        const eventId = store.current().id;
+        const payload = {};
+        people.forEach(p=>{
+          payload[p.code] = {
+            name: p.name,
+            dept: p.dept,
+            table: p.table,
+            seat:  p.seat,
+            arrived: false,
+            eligible: false,
+            receivedGift: false,
+            gift: { id:null, name:null, awardedAt:null }
+          };
+        });
+        await FB.patch(`/events/${eventId}/guests`, payload);
+        console.log(`Synced ${people.length} guests to cloud.`);
+      } catch (e) {
+        console.warn('Cloud guest sync failed', e);
+      }
     store.save(state); renderAll();
 
   });
@@ -1213,6 +1308,28 @@ function renderRosterList(){
   const filtered = (state.people || []).filter(p =>
     (!q) || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q)
   );
+
+    // Code input
+  const codeIn = document.createElement('input'); codeIn.placeholder='碼'; codeIn.value = p.code || '';
+  codeIn.onchange = ()=>{ p.code = (codeIn.value||'').trim(); store.save(state); };
+
+  // Table input
+  const tableIn = document.createElement('input'); tableIn.placeholder='桌'; tableIn.value = p.table || '';
+  tableIn.onchange = ()=>{ p.table = (tableIn.value||'').trim(); store.save(state); };
+
+  // Seat input
+  const seatIn = document.createElement('input'); seatIn.placeholder='座'; seatIn.value = p.seat || '';
+  seatIn.onchange = ()=>{ p.seat = (seatIn.value||'').trim(); store.save(state); };
+
+  // ...append these to new <td> columns in your row...
+
+  const c = (p.code||'').trim(); const eventId = store.current().id;
+if (c) {
+  FB.patch(`/events/${eventId}/guests/${encodeURIComponent(c)}`, {
+    arrived: !!p.checkedIn,
+    eligible: !!p.checkedIn
+  }).catch(()=>{});
+}
 
   filtered.forEach((p, idxInFiltered)=>{
     const tr = document.createElement('tr');

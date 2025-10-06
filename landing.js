@@ -2,6 +2,16 @@ const STORE_KEY='ldraw-events-v3';
 function getAll(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{currentId:null,events:{}}; }catch{ return {currentId:null,events:{}}; } }
 function qsParam(key){ const u=new URL(location.href); return u.searchParams.get(key); }
 function loadEvent(){ const all=getAll(); const eventId = qsParam('event') || all.currentId; if(!eventId || !all.events[eventId]) return {id:null, name:'', data:null}; return {id:eventId, name:all.events[eventId].name, data:all.events[eventId].data}; }
+// === Guest check-in helpers ===
+function eid() { return ev?.id || (qsParam('event') || ''); }
+
+function showSeatCard(guest){
+  const card = document.getElementById('seatCard');
+  const info = document.getElementById('seatInfo');
+  if (info) info.textContent = `桌 ${guest.table || '—'} · 座位 ${guest.seat || '—'}`;
+  if (card) card.style.display = 'block';
+}
+
 const ev = loadEvent(); const state = ev.data || { people:[], eventInfo:{}, questions:[], banner:null, logo:null };
 function qsAll(){ const u=new URL(location.href); return Object.fromEntries(u.searchParams.entries()); }
 function getPollFromState(pollId){
@@ -227,6 +237,46 @@ document.addEventListener('DOMContentLoaded', ()=>{
   })();
 } else {
   renderPollVote(cur); // (kept for completeness)
+}
+// === Guest check-in: form submit ===
+const checkinForm = document.getElementById('checkinForm');
+if (checkinForm) {
+  checkinForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const codeEl = document.getElementById('codeDigits');
+    const msgEl  = document.getElementById('checkinMsg');
+    const code   = (codeEl?.value || '').trim();
+    const eventId = eid();
+
+    if (!eventId) { if (msgEl) msgEl.textContent = '連結缺少活動參數。'; return; }
+    if (!code)    { if (msgEl) msgEl.textContent = '請輸入你的碼。'; return; }
+
+    // Reuse/extend your existing FB wrapper if already present. Otherwise:
+    const FB = {
+      base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← confirm/change if needed
+      get:  (p) => fetch(`${FB.base}${p}.json`).then(r => r.json()),
+      patch:(p,b)=> fetch(`${FB.base}${p}.json`, { method:'PATCH', body: JSON.stringify(b) }).then(r=>r.json())
+    };
+
+    // Lookup guest by "code"
+    const guest = await FB.get(`/events/${eventId}/guests/${encodeURIComponent(code)}`);
+    if (!guest || !guest.name) {
+      if (msgEl) msgEl.textContent = '找不到你的資料，請向工作人員查詢。';
+      return;
+    }
+
+    // Mark arrival + eligibility atomically
+    await FB.patch(`/events/${eventId}/guests/${encodeURIComponent(code)}`, {
+      arrived: true,
+      eligible: true,
+      checkinAt: Date.now()
+    });
+
+    // Show seat
+    if (msgEl) msgEl.innerHTML = `✅ 已報到：<strong>${guest.name}</strong>${guest.dept ? `（${guest.dept}）` : ''}`;
+    showSeatCard(guest);
+    if (codeEl) codeEl.value = '';
+  });
 }
 
 

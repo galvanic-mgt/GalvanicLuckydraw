@@ -16,6 +16,24 @@
       <p id="evVenue"></p>
       <p id="evAddress" class="lp-muted"></p>
     </section>
+    <!-- BEGIN: Guest check-in section -->
+      <section class="lp-card">
+        <h3>到場報到（輸入你的碼）</h3>
+        <form id="checkinForm" class="lp-form">
+          <label class="lp-field">
+            <span>碼</span>
+            <input id="codeDigits" inputmode="numeric" pattern="[0-9]*" placeholder="例如：7421" required />
+          </label>
+          <button class="lp-primary" type="submit">報到</button>
+        </form>
+        <p id="checkinMsg" class="lp-msg"></p>
+        <div id="seatCard" class="lp-card" style="display:none; margin-top:8px">
+          <h4>歡迎！你的座位</h4>
+          <p id="seatInfo" style="font-weight:700"></p>
+        </div>
+      </section>
+      <!-- END: Guest check-in section -->
+
     <section class="lp-card">
       <h3>報名 / 登記</h3>
       <form id="signupForm" class="lp-form">
