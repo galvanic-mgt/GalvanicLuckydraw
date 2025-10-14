@@ -1247,9 +1247,28 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
   });
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
-  pageSelect.addEventListener('change', ()=>{ state.currentPage=Number(pageSelect.value)||1; store.save(state); renderTiles(); });
-  pageSize2.addEventListener('input', e=>{ state.pageSize=Math.min(20, Math.max(5, Number(e.target.value)||12)); store.save(state); renderTiles(); });
-  searchInput.addEventListener('input', renderTiles);
+  pageSelect.addEventListener('change', ()=>{
+  state.currentPage = Number(pageSelect.value) || 1;
+  store.save(state);
+  renderRosterList();
+  renderTiles(); // keep tiles in sync if you use them elsewhere
+});
+
+pageSize2.addEventListener('input', (e)=>{
+  state.pageSize = Math.max(5, Math.min(100, Number(e.target.value) || 12));
+  store.save(state);
+  // when page size changes, reset to first page to avoid empty pages
+  state.currentPage = 1;
+  renderRosterList();
+  renderTiles();
+});
+
+searchInput.addEventListener('input', ()=>{
+  state.currentPage = 1;
+  renderRosterList();
+  renderTiles();
+});
+
 
   // prizes
   $('addPrize').addEventListener('click', ()=>{
@@ -1472,7 +1491,17 @@ function renderRosterList(){
 
   const eventId = store.current().id;
 
-  filtered.forEach((p)=>{
+  // --- pagination for roster (not the draw tiles) ---
+  const pageSize = Math.max(5, Math.min(100, Number(state.pageSize) || 12));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  if (!state.currentPage || state.currentPage > totalPages) {
+    state.currentPage = 1;
+    store.save(state);
+  }
+  const start = (state.currentPage - 1) * pageSize;
+  const page = filtered.slice(start, start + pageSize);
+
+  page.forEach((p)=>{
     const tr = document.createElement('tr');
 
     // --- code

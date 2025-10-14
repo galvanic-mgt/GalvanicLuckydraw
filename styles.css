@@ -76,13 +76,6 @@ body.public-mode #publicView .stage{min-height:100vh;border-radius:0;border:none
 .table th, .table td { padding:10px 12px; text-align:left }
 .table tr { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12) }
 
-/* Embedded stage inside CMS: scale neatly with the card width */
-#pageStage .stage {
-  aspect-ratio: 16 / 9;
-  height: auto;
-  min-height: auto;            /* override global min-height:60vh */
-  position: relative;
-}
 
 /* ===== Embedded stage inside CMS (抽獎舞台) — single consolidated rule set ===== */
 #pageStage .stage {
@@ -403,4 +396,25 @@ body:not(.public-mode):not(.tablet-mode) #pageStage .stage {
 body:not(.public-mode)  #publicView  { display: none !important; }
 body:not(.tablet-mode)  #tabletView  { display: none !important; }
 
+/* Public view: make sure everything is visually centered */
+#publicView .stage .stage-inner { justify-content: center; }
 
+/* CMS stage: never let the grid overflow the card */
+#pageStage .batch-grid { max-width: 100%; justify-items: center; }
+
+/* Roster table: dense, one-line rows */
+#pageRoster .table th,
+#pageRoster .table td { padding: 6px 8px; vertical-align: middle; }
+
+#pageRoster .table input {
+  padding: 6px 8px;
+  height: 32px;
+}
+
+/* Keep name/department cells single-line and tidy */
+#pageRoster td:nth-child(2),
+#pageRoster td:nth-child(3) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
