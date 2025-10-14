@@ -58,16 +58,34 @@
   </main>
 
   <main class="container" id="tabletView" style="display:none">
-  <section class="card" style="padding:14px">
-    <h3 style="margin-top:0">平板控制</h3>
-    <div class="bar" style="margin-bottom:8px">
-      <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
-      <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
-      <button id="tabletDraw" class="btn" type="button">🎲 Draw Now</button>
+  <section class="card stage">
+    <img id="logoEl3" class="logo" alt="logo" />
+    <div id="bgEl3" class="bg"></div>
+    <div class="stage-inner">
+      <div id="banner3" class="banner"></div>
+      <div class="row prize-header">
+        <div class="prize-title" id="publicPrize3">—</div>
+        <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
+      </div>
+
+      <div id="currentBatch3" class="batch-grid"></div>
+      <div class="winners-list" id="winnersChips3"></div>
+
+      <!-- 平板專用控制列（就在舞台下方） -->
+      <div class="bar" style="justify-content:center;margin-top:12px">
+        <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
+        <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
+        <button id="tabletDraw" class="btn" type="button">🎲 Draw Now</button>
+      </div>
+
+      <div class="bar" style="justify-content:center;margin-top:12px">
+        <span class="stat" id="statsRemain3">剩餘：0</span>
+        <span class="stat" id="statsWinners3">已得獎：0</span>
+      </div>
     </div>
-    <p class="pill">此頁僅提供抽獎控制；結果會在「公開顯示」的大屏舞台出現。</p>
   </section>
 </main>
+
 
   <!-- CMS view -->
   <main class="container" id="cmsView">

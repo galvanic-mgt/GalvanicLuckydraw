@@ -424,6 +424,8 @@ let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
 let publicPrize2, batchGrid2, winnersChips2, bgEl2, logoEl2, bannerEl2, confetti2, ctx2, confettiParticles2=[];
+// Tablet stage refs (mirror of public & embedded)
+let publicPrize3, batchGrid3, winnersChips3, bgEl3, bannerEl3, logoEl3;
 
 let eventList, newEventName, newClientName, addEventBtn;
 let evTitle, evClient, evDateTime, evVenue, evAddress, evMapUrl, evBus, evTrain, evParking, evNotes;
@@ -454,9 +456,9 @@ let landingURL, copyURL, openLanding, qrBox, downloadQR, landingLink, openFullSt
 function currentPrize(){ return state.prizes.find(p=>p.id===state.currentPrizeId)||null; }
 function prizeLeft(p){ return Math.max(0,(p?.quota||0)-(p?.won?.length||0)); }
 
-function renderBG(){ [bgEl,bgEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
-function renderLogo(){ [logoEl,logoEl2].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
-function renderBanner(){ [bannerEl,bannerEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
+function renderBG(){ [bgEl,bgEl2,bgEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
+function renderLogo(){ [logoEl,logoEl2,logoEl3].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
+function renderBanner(){ [bannerEl,bannerEl2,bannerEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
 
 function renderBatchTargets(targetGrid){
   targetGrid.innerHTML='';
@@ -472,43 +474,59 @@ function renderBatchTargets(targetGrid){
   });
 }
 function updatePublicPanel(){
-  const p=currentPrize();
-  [publicPrizeEl, publicPrize2].forEach(el=>{
-  if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
-});
-const remainText  = `剩餘：${state.remaining.length}`;
-const winnersText = `已得獎：${state.winners.length}`;
+  const p = currentPrize();
 
-[document.getElementById('statsRemain'),
- document.getElementById('statsRemain2')].forEach(el => { if (el) el.textContent = remainText; });
+  // Title (now for 3 stages: embedded/public/tablet)
+  [publicPrizeEl, publicPrize2, publicPrize3].forEach(el=>{
+    if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
+  });
 
-[document.getElementById('statsWinners'),
- document.getElementById('statsWinners2')].forEach(el => { if (el) el.textContent = winnersText; });
+  // Global stats
+  const remainText  = `剩餘：${state.remaining.length}`;
+  const winnersText = `已得獎：${state.winners.length}`;
 
-const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
-// Update both the new inline badges and (if you keep it) the old bottom stat
-[document.getElementById('prizeLeftInline'),
- document.getElementById('prizeLeftInline2'),
- statsPrizeLeft].forEach(el => { if (el) el.textContent = leftText; });
+  [document.getElementById('statsRemain'),
+   document.getElementById('statsRemain2'),
+   document.getElementById('statsRemain3')
+  ].forEach(el => { if (el) el.textContent = remainText; });
 
-  const html = p? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
-  // no bottom chips needed
-if(winnersChips) winnersChips.innerHTML = '';
-if(winnersChips2) winnersChips2.innerHTML = '';
+  [document.getElementById('statsWinners'),
+   document.getElementById('statsWinners2'),
+   document.getElementById('statsWinners3')
+  ].forEach(el => { if (el) el.textContent = winnersText; });
 
+  // Prize-left inline badges (and keep your old bottom stat if present)
+  const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
+  [document.getElementById('prizeLeftInline'),
+   document.getElementById('prizeLeftInline2'),
+   document.getElementById('prizeLeftInline3'),
+   // keep your old bottom stat if the var exists
+   (typeof statsPrizeLeft !== 'undefined' ? statsPrizeLeft : null)
+  ].forEach(el => { if (el) el.textContent = leftText; });
+
+  // (You were computing html, but clearing chips — preserve that behavior and include tablet)
+  const html = p ? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
+  if (winnersChips)  winnersChips.innerHTML  = '';
+  if (winnersChips2) winnersChips2.innerHTML = '';
+  if (typeof winnersChips3 !== 'undefined' && winnersChips3) winnersChips3.innerHTML = '';
+
+  // Visuals
   renderBanner();
-  if(batchGrid) renderBatchTargets(batchGrid);
-  if(batchGrid2) renderBatchTargets(batchGrid2);
 
-    // show/refresh the current poll’s QR on the public stage
+  // Batch target grids (support all three)
+  if (batchGrid)  renderBatchTargets(batchGrid);
+  if (batchGrid2) renderBatchTargets(batchGrid2);
+  if (typeof batchGrid3 !== 'undefined' && batchGrid3) renderBatchTargets(batchGrid3);
+
+  // Show/refresh current poll’s QR on the public stage
   renderActivePollQR();
 
   // Center Public view on the poll QR when requested
-document.body.classList.toggle('poll-only',
-  !!(document.body.classList.contains('public-mode') && state.showPollOnly)
-);
-
+  document.body.classList.toggle('poll-only',
+    !!(document.body.classList.contains('public-mode') && state.showPollOnly)
+  );
 }
+
 
 // roster
 function filterBySearch(list){ const q=(searchInput?.value||'').trim().toLowerCase(); if(!q) return list; return list.filter(p=> (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q)); }
@@ -881,6 +899,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
   batchGrid=$('currentBatch'); winnersChips=$('winnersChips');
   bgEl=$('bgEl'); logoEl=$('logoEl'); bannerEl=$('banner');
 
+  publicPrize3  = document.getElementById('publicPrize3');
+  batchGrid3    = document.getElementById('currentBatch3');
+  winnersChips3 = document.getElementById('winnersChips3');
+
+
   // Embedded stage refs
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
@@ -910,6 +933,15 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
   csvInput=$('csv'); btnPreset=$('preset'); btnExportCheckin=$('exportCheckin'); btnExportSession=$('exportSession'); importSessionInput=$('importSession');
   pageSelect=$('pageSelect'); searchInput=$('search'); pageSize2=$('pageSize2');
   const addName = $('addName'), addDept = $('addDept'), addPresent = $('addPresent'), addPersonBtn = $('addPerson');
+
+  // Tablet stage refs
+  publicPrize3 = $('publicPrize3');
+  batchGrid3   = $('currentBatch3');
+  winnersChips3= $('winnersChips3');
+  bgEl3        = $('bgEl3');
+  logoEl3      = $('logoEl3');
+  bannerEl3    = $('banner3');
+
 
   addPersonBtn.addEventListener('click', ()=>{
   const name = (addName.value||'').trim();
@@ -1215,13 +1247,20 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
   $('clearStage').addEventListener('click', ()=>{
   // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
   state.currentBatch = [];
-  state.lastConfirmed = null;      // 可選：一併清掉最後確認
+  state.lastConfirmed = null;
+  state.lastPick = null;                 // ← 關鍵：不要保留上一輪狀態
+  state.showPollOnly = false;            // ← 關鍵：退出「投票 QR only」模式
   store.save(state);
+  updatePublicPanel();                   // 立即刷新舞台
   renderAll();
 
-  // 告知其他視窗（如公眾頁）立即刷新
-  try { bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() }); } catch {}
+  // 告知其他視窗（如公眾頁）切回抽獎畫面並刷新
+  try { 
+    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
+    bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() });
+  } catch {}
 });
+
 
   // storage
   saveSnapshotBtn.addEventListener('click', addSnapshot);
