@@ -282,3 +282,8 @@ body.public-mode.public-result #publicView #pollPublicRow{
 body.public-mode.public-result #publicView .stage-inner{
   justify-content:flex-start;
 }
+/* Tablet 控制模式：隱藏 Header 與 CMS */
+body.tablet-mode header{ display:none; }
+body.tablet-mode #cmsView{ display:none !important; }
+body.tablet-mode #publicView{ display:none !important; }
+

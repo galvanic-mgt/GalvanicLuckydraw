@@ -474,7 +474,7 @@ function renderBatchTargets(targetGrid){
 function updatePublicPanel(){
   const p=currentPrize();
   [publicPrizeEl, publicPrize2].forEach(el=>{
-  if (el) el.textContent = p ? `現正抽取：${p.name}（名額 ${p.quota}）` : '—';
+  if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
 });
 const remainText  = `剩餘：${state.remaining.length}`;
 const winnersText = `已得獎：${state.winners.length}`;
@@ -1022,6 +1022,40 @@ emSearch.addEventListener('input', renderEventsTable);
   tabPublic.addEventListener('click', ()=>{ tabPublic.classList.add('active'); tabCMS.classList.remove('active','primary'); cmsView.style.display='none'; publicView.style.display='block'; document.body.classList.add('public-mode'); });
   tabCMS.addEventListener('click', ()=>{ tabCMS.classList.add('active','primary'); tabPublic.classList.remove('active'); publicView.style.display='none'; cmsView.style.display='block'; document.body.classList.remove('public-mode'); });
 
+  const tabTablet = $('tabTablet');
+const tabletView = $('tabletView');
+
+if (tabTablet) {
+  tabTablet.addEventListener('click', ()=>{
+    // 類似公眾頁：不讓用戶看到 CMS
+    document.body.classList.add('tablet-mode');
+    // 顯示平板頁、隱藏其它
+    tabletView.style.display = 'block';
+    cmsView.style.display = 'none';
+    publicView.style.display = 'none';
+  });
+}
+
+// 支援 URL 直接進入：index.html#tablet
+if (location.hash === '#tablet') {
+  $('tabTablet')?.click();
+}
+
+// 綁定平板上的按鈕
+const tabletBatch = $('tabletBatch');
+$('tabletDraw')?.addEventListener('click', ()=>{
+  state.showPollOnly = false; store.save(state); updatePublicPanel();
+  const n = Math.max(1, Number(tabletBatch?.value)||1);
+  n===1 ? drawOne() : drawBatch(n);
+});
+$('tabletCountdown')?.addEventListener('click', async ()=>{
+  state.showPollOnly = false; store.save(state); updatePublicPanel();
+  const n = Math.max(1, Number(tabletBatch?.value)||1);
+  await countdown();
+  n===1 ? drawOne() : drawBatch(n);
+});
+
+
   // left nav subpages
   document.querySelectorAll('.nav-item').forEach(b=>{
     b.addEventListener('click', ()=> setActivePage(b.dataset.target));
@@ -1177,6 +1211,17 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
     a.href=url; a.download='winners.csv'; a.click(); URL.revokeObjectURL(url);
   });
+
+  $('clearStage').addEventListener('click', ()=>{
+  // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
+  state.currentBatch = [];
+  state.lastConfirmed = null;      // 可選：一併清掉最後確認
+  store.save(state);
+  renderAll();
+
+  // 告知其他視窗（如公眾頁）立即刷新
+  try { bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() }); } catch {}
+});
 
   // storage
   saveSnapshotBtn.addEventListener('click', addSnapshot);

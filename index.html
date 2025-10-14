@@ -13,6 +13,7 @@
       <div class="tabs">
         <button id="tabCMS" class="btn primary active" type="button">後台 CMS</button>
         <button id="tabPublic" class="btn" type="button">公開顯示</button>
+        <button id="tabTablet" class="btn" type="button">平板控制</button>
       </div>
       <div class="bar" style="margin-left:auto">
         <a id="landingLink" class="btn primary" href="./landing.html" target="_blank" role="button">手機報名頁 ↗</a>
@@ -55,6 +56,18 @@
     </section>
     <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
   </main>
+
+  <main class="container" id="tabletView" style="display:none">
+  <section class="card" style="padding:14px">
+    <h3 style="margin-top:0">平板控制</h3>
+    <div class="bar" style="margin-bottom:8px">
+      <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
+      <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
+      <button id="tabletDraw" class="btn" type="button">🎲 Draw Now</button>
+    </div>
+    <p class="pill">此頁僅提供抽獎控制；結果會在「公開顯示」的大屏舞台出現。</p>
+  </section>
+</main>
 
   <!-- CMS view -->
   <main class="container" id="cmsView">
@@ -184,7 +197,10 @@
             <button id="draw" class="btn" type="button">🎲 即抽</button>
             <button id="confirm" class="btn success" type="button" disabled>✅ 上台確認</button>
             <button id="undo" class="btn" type="button" disabled>↩️ Undo</button>
+            <button id="clearStage" class="btn" type="button">🧹 清空舞台名單</button>
             <button id="exportWinners" class="btn" type="button">匯出得獎 CSV</button>
+            <button id="clearBatch" class="btn warning" type="button">🧹 清空舞台名稱</button>
+                  <a id="openTablet" class="btn" href="#tablet">平板控制 ↗</a>
             <a id="openFullStage" class="btn" href="#" target="_blank">在新視窗開啟全屏舞台 ↗</a>
           </div>
 
