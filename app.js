@@ -1069,8 +1069,10 @@ emClone.addEventListener('click', ()=>{
 
 emSearch.addEventListener('input', renderEventsTable);
 
-  // ---- Top tabs + routing (CMS / Public / Tablet)
-const tabTablet = $('tabTablet');
+// ---- Top tabs + routing (CMS / Public / Tablet)
+const tabTablet  = $('tabTablet');
+const cmsView    = $('cmsView');
+const publicView = $('publicView');
 const tabletView = $('tabletView');
 
 function showCMS(){
@@ -1080,7 +1082,10 @@ function showCMS(){
   publicView.style.display = 'none';
   tabletView.style.display = 'none';
   location.hash = '#cms';
+  // kick layout so CSS safety applies immediately
+  window.dispatchEvent(new Event('resize'));
 }
+
 function showPublic(){
   document.body.classList.add('public-mode');
   document.body.classList.remove('tablet-mode');
@@ -1089,34 +1094,35 @@ function showPublic(){
   publicView.style.display = 'block';
   tabletView.style.display = 'none';
   location.hash = '#public';
+  window.dispatchEvent(new Event('resize'));
 }
+
 function showTablet(){
   document.body.classList.add('tablet-mode');
   document.body.classList.remove('public-mode');
   cmsView.style.display = 'none';
   publicView.style.display = 'none';
-  tabletView.style.display = 'flex'; // flex for centering
+  tabletView.style.display = 'flex';
   location.hash = '#tablet';
-  // no auto-fullscreen — user controls it from the button
+  // no auto-fullscreen here
   window.dispatchEvent(new Event('resize'));
 }
 
-
-tabPublic.addEventListener('click', showPublic);
-tabCMS.addEventListener('click', showCMS);
+tabCMS?.addEventListener('click', showCMS);
+tabPublic?.addEventListener('click', showPublic);
 tabTablet?.addEventListener('click', showTablet);
 
-// initial route
+// Initial route (default to CMS to avoid accidental overlay)
 if (location.hash === '#tablet')      showTablet();
 else if (location.hash === '#public') showPublic();
 else                                  showCMS();
 
-// allow manual hash changes (optional)
 window.addEventListener('hashchange', ()=>{
   if (location.hash === '#tablet')      showTablet();
   else if (location.hash === '#public') showPublic();
   else                                  showCMS();
 });
+
 
 // Tablet: manual fullscreen button
 $('tabletFullscreen')?.addEventListener('click', ()=>{

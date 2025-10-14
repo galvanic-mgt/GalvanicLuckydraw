@@ -365,4 +365,16 @@ body.tablet-mode #publicView { display:none !important; }
   backdrop-filter: blur(4px);
 }
 
+/* === SAFETY: When not in Public/Tablet, hide all .stage except the one in the CMS 抽獎舞台 tab === */
+body:not(.public-mode):not(.tablet-mode) .stage { 
+  display: none !important;
+}
+body:not(.public-mode):not(.tablet-mode) #pageStage .stage {
+  display: block !important;
+}
+
+/* Also ensure non-active views never show their stages */
+body:not(.public-mode)  #publicView  { display: none !important; }
+body:not(.tablet-mode)  #tabletView  { display: none !important; }
+
 
