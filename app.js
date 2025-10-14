@@ -434,7 +434,8 @@ function fireConfetti(){
 
 // --- State & DOM refs ---
 let state;
-let publicView, cmsView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
+let publicView, cmsView, tabletView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
+
 let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
@@ -1071,9 +1072,9 @@ emSearch.addEventListener('input', renderEventsTable);
 
 // ---- Top tabs + routing (CMS / Public / Tablet)
 const tabTablet  = $('tabTablet');
-const cmsView    = $('cmsView');
-const publicView = $('publicView');
-const tabletView = $('tabletView');
+cmsView    = $('cmsView');
+publicView = $('publicView');
+tabletView = $('tabletView');
 
 function showCMS(){
   document.body.classList.remove('tablet-mode','public-mode');
