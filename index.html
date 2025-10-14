@@ -57,13 +57,18 @@
     <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
   </main>
 
-  <main class="container" id="tabletView" style="display:none">
+ <main id="tabletView" style="display:none">
   <section class="card stage">
+    <!-- Top-right fullscreen button (manual) -->
+    <button id="tabletFullscreen" class="btn tablet-fs-btn" type="button" title="全屏">⛶ 全屏</button>
+
     <img id="logoEl3" class="logo" alt="logo" />
     <div id="bgEl3" class="bg"></div>
-     <canvas id="confetti3"></canvas>
+    <canvas id="confetti3"></canvas>
+
     <div class="stage-inner">
       <div id="banner3" class="banner"></div>
+
       <div class="row prize-header">
         <div class="prize-title" id="publicPrize3">—</div>
         <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
@@ -72,7 +77,7 @@
       <div id="currentBatch3" class="batch-grid"></div>
       <div class="winners-list" id="winnersChips3"></div>
 
-      <!-- 平板專用控制列（就在舞台下方） -->
+      <!-- 平板專用控制列（舞台下方；沒有「即抽」按鈕） -->
       <div class="bar" style="justify-content:center;margin-top:12px">
         <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
         <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>

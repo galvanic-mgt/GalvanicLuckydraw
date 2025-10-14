@@ -1097,11 +1097,10 @@ function showTablet(){
   publicView.style.display = 'none';
   tabletView.style.display = 'flex'; // flex for centering
   location.hash = '#tablet';
-  const d = document.documentElement;
-  if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen().catch(()=>{});
-  // make sure canvases resize to viewport
+  // no auto-fullscreen — user controls it from the button
   window.dispatchEvent(new Event('resize'));
 }
+
 
 tabPublic.addEventListener('click', showPublic);
 tabCMS.addEventListener('click', showCMS);
@@ -1119,6 +1118,15 @@ window.addEventListener('hashchange', ()=>{
   else                                  showCMS();
 });
 
+// Tablet: manual fullscreen button
+$('tabletFullscreen')?.addEventListener('click', ()=>{
+  const d = document.documentElement;
+  if (!document.fullscreenElement && d.requestFullscreen) {
+    d.requestFullscreen().catch(()=>{});
+  } else if (document.exitFullscreen) {
+    document.exitFullscreen().catch(()=>{});
+  }
+});
 
 // 綁定平板上的按鈕
 const tabletBatch = $('tabletBatch');

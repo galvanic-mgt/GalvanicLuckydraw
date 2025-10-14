@@ -354,4 +354,15 @@ body.tablet-mode #publicView { display:none !important; }
   object-fit:contain;
 }
 
+/* Top-right fullscreen button for tablet view */
+.tablet-fs-btn{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:6;
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.18);
+  backdrop-filter: blur(4px);
+}
+
 
