@@ -411,6 +411,7 @@ function makeConfettiEngine(canvas, hostEl=null){
 
 let confettiPublic = null;
 let confettiStage  = null;
+let confettiTablet = null;
 
 // Fix the typo and unify celebration:
 function celebrateAt(rectLike=null){
@@ -939,7 +940,7 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 
 // Tablet embedded
 const tabletStageEl = document.querySelector('#tabletView .stage');
-let confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl);
+confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
 
 
 
@@ -1068,33 +1069,56 @@ emClone.addEventListener('click', ()=>{
 
 emSearch.addEventListener('input', renderEventsTable);
 
+  // ---- Top tabs + routing (CMS / Public / Tablet)
+const tabTablet = $('tabTablet');
+const tabletView = $('tabletView');
 
-  // top tabs
-  tabPublic.addEventListener('click', ()=>{ tabPublic.classList.add('active'); tabCMS.classList.remove('active','primary'); cmsView.style.display='none'; publicView.style.display='block'; document.body.classList.add('public-mode'); });
-  tabCMS.addEventListener('click', ()=>{ tabCMS.classList.add('active','primary'); tabPublic.classList.remove('active'); publicView.style.display='none'; cmsView.style.display='block'; document.body.classList.remove('public-mode'); });
-
-  const tabTablet = $('tabTablet');
-  const tabletView = $('tabletView');
-
-if (tabTablet) {
-  tabTablet.addEventListener('click', ()=>{
-    document.body.classList.add('tablet-mode');
-
-    tabletView.style.display = 'block';
-    cmsView.style.display = 'none';
-    publicView.style.display = 'none';
-
-    // Try fullscreen for an appliance-like feel
-    const d = document.documentElement;
-    if (d.requestFullscreen) { d.requestFullscreen().catch(()=>{}); }
-  });
+function showCMS(){
+  document.body.classList.remove('tablet-mode','public-mode');
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  cmsView.style.display = 'block';
+  publicView.style.display = 'none';
+  tabletView.style.display = 'none';
+  location.hash = '#cms';
+}
+function showPublic(){
+  document.body.classList.add('public-mode');
+  document.body.classList.remove('tablet-mode');
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  cmsView.style.display = 'none';
+  publicView.style.display = 'block';
+  tabletView.style.display = 'none';
+  location.hash = '#public';
+}
+function showTablet(){
+  document.body.classList.add('tablet-mode');
+  document.body.classList.remove('public-mode');
+  cmsView.style.display = 'none';
+  publicView.style.display = 'none';
+  tabletView.style.display = 'flex'; // flex for centering
+  location.hash = '#tablet';
+  const d = document.documentElement;
+  if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen().catch(()=>{});
+  // make sure canvases resize to viewport
+  window.dispatchEvent(new Event('resize'));
 }
 
+tabPublic.addEventListener('click', showPublic);
+tabCMS.addEventListener('click', showCMS);
+tabTablet?.addEventListener('click', showTablet);
 
-// 支援 URL 直接進入：index.html#tablet
-if (location.hash === '#tablet') {
-  $('tabTablet')?.click();
-}
+// initial route
+if (location.hash === '#tablet')      showTablet();
+else if (location.hash === '#public') showPublic();
+else                                  showCMS();
+
+// allow manual hash changes (optional)
+window.addEventListener('hashchange', ()=>{
+  if (location.hash === '#tablet')      showTablet();
+  else if (location.hash === '#public') showPublic();
+  else                                  showCMS();
+});
+
 
 // 綁定平板上的按鈕
 const tabletBatch = $('tabletBatch');
@@ -1284,6 +1308,19 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
   } catch {}
 });
 
+  $('clearBatch')?.addEventListener('click', ()=>{
+  state.currentBatch = [];
+  state.lastConfirmed = null;
+  state.lastPick = null;
+  state.showPollOnly = false;
+  store.save(state);
+  updatePublicPanel();
+  renderAll();
+  try {
+    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
+    bc && bc.postMessage({ type:'TICK', reason:'clearBatch', ts: Date.now() });
+  } catch {}
+});
 
   // storage
   saveSnapshotBtn.addEventListener('click', addSnapshot);
