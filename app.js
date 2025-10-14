@@ -77,19 +77,19 @@ function fireAtElement(el, engine, count=180) {
   let x = r.left + r.width / 2;
   let y = r.top  + r.height / 2;
 
-  if (engine === confettiPublic) {
-    x += scrollX; 
-    y += scrollY;     // viewport-sized
-  } else if (engine === confettiStage) {
-    const stageEl = document.querySelector('#pageStage .stage'); // use stage as origin
-    if (stageEl) {
-      const sr = stageEl.getBoundingClientRect();
-      x -= sr.left;
-      y -= sr.top;    // element-sized canvas local coords
-    }
+  // If the engine is viewport-based (no host), pass window coords
+  if (!engine.hostEl) {
+    x += scrollX;
+    y += scrollY;
+  } else {
+    // Translate to the engine's host local coords
+    const sr = engine.hostEl.getBoundingClientRect();
+    x -= sr.left;
+    y -= sr.top;
   }
   engine.fire(x, y, count);
 }
+
 
 
 // Convenience: fire on all winner cards in a container
@@ -193,16 +193,28 @@ if (bc) {
 
 
     } else if (d.type === 'REROLL_BURST') {
+      // Public
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
-        const idx = d.at || 0;
-        const cards = document.querySelectorAll('#currentBatch .winner-card');
+      const idx = d.at || 0;
+      const cards = document.querySelectorAll('#currentBatch .winner-card');
         if (cards[idx]) fireAtElement(cards[idx], confettiPublic, 140);
+      }
+      // Tablet
+      if (document.body.classList.contains('tablet-mode')) {
+        const idx = d.at || 0;
+        const cards = document.querySelectorAll('#currentBatch3 .winner-card');
+        if (cards[idx]) fireAtElement(cards[idx], confettiTablet, 140);
       }
 
     } else if (d.type === 'DRAW_BURST') {
+      // Public
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
         setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 10);
       }
+      // Tablet
+      if (document.body.classList.contains('tablet-mode')) {
+        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch3'), confettiTablet); }, 10);
+  }
 
       } else if (d.type === 'SHOW_POLL_RESULT') {
   // Only the Public screen should respond
@@ -339,6 +351,8 @@ function makeConfettiEngine(canvas, hostEl=null){
       // Ensure it fills the stage box
       canvas.style.position = 'absolute';
       canvas.style.inset = '0';
+      canvas.style.pointerEvents = 'none';
+      canvas.style.zIndex = '5';
     } else {
       canvas.width  = innerWidth;
       canvas.height = innerHeight;
@@ -392,7 +406,7 @@ function makeConfettiEngine(canvas, hostEl=null){
   }
   requestAnimationFrame(tick);
 
-  return { fire, resize };
+  return { fire, resize, hostEl };
 }
 
 let confettiPublic = null;
@@ -923,6 +937,11 @@ confettiPublic = makeConfettiEngine($('confetti'));
 const embeddedStageEl = document.querySelector('#pageStage .stage');
 confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 
+// Tablet embedded
+const tabletStageEl = document.querySelector('#tabletView .stage');
+let confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl);
+
+
 
   // sidebar + events
   eventList=$('eventList'); newEventName=$('newEventName'); newClientName=$('newClientName'); addEventBtn=$('addEvent');
@@ -1055,18 +1074,22 @@ emSearch.addEventListener('input', renderEventsTable);
   tabCMS.addEventListener('click', ()=>{ tabCMS.classList.add('active','primary'); tabPublic.classList.remove('active'); publicView.style.display='none'; cmsView.style.display='block'; document.body.classList.remove('public-mode'); });
 
   const tabTablet = $('tabTablet');
-const tabletView = $('tabletView');
+  const tabletView = $('tabletView');
 
 if (tabTablet) {
   tabTablet.addEventListener('click', ()=>{
-    // 類似公眾頁：不讓用戶看到 CMS
     document.body.classList.add('tablet-mode');
-    // 顯示平板頁、隱藏其它
+
     tabletView.style.display = 'block';
     cmsView.style.display = 'none';
     publicView.style.display = 'none';
+
+    // Try fullscreen for an appliance-like feel
+    const d = document.documentElement;
+    if (d.requestFullscreen) { d.requestFullscreen().catch(()=>{}); }
   });
 }
+
 
 // 支援 URL 直接進入：index.html#tablet
 if (location.hash === '#tablet') {
