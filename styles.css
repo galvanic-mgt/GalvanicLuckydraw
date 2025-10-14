@@ -27,7 +27,7 @@ footer{opacity:.6;text-align:center;padding:10px}
 .stage{position:relative;min-height:60vh;border-radius:18px;background:radial-gradient(1200px 600px at 50% 0%,rgba(59,221,255,.18),transparent 60%),rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);overflow:hidden}
 .bg{position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(6px) brightness(.6);opacity:.6}
 .logo{position:absolute;left:16px;top:16px;z-index:2;max-width:200px;max-height:80px;opacity:.95}
-.stage-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100%;padding:24px 32px;text-align:center}
+.stage-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px 32px;text-align:center}
 .banner{width:100%;height:220px;background-size:contain;background-repeat:no-repeat;background-position:center;margin-bottom:16px;border-radius:12px}
 @media (min-width:1600px){ .banner{height:300px} }
 .prize-title{font-size:clamp(24px,2.6vw,52px);opacity:.95;margin:0 auto 14px;font-weight:800;}
@@ -84,28 +84,54 @@ body.public-mode #publicView .stage{min-height:100vh;border-radius:0;border:none
   position: relative;
 }
 
-/* Slightly smaller banner for the embedded stage */
+/* ===== Embedded stage inside CMS (抽獎舞台) — single consolidated rule set ===== */
+#pageStage .stage {
+  /* keep aspect & avoid global min-height */
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: auto;
+  position: relative;
+
+  /* keep it centered and fixed-width within the card */
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0 auto;
+}
+
+#pageStage .stage .stage-inner {
+  /* center content vertically/horizontally and scale padding responsively */
+  justify-content: center;
+  padding: clamp(12px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px);
+}
+
 #pageStage .banner {
   height: clamp(100px, 18vh, 220px);
 }
 
-/* Let the grid pack more flexibly on narrow CMS widths */
 #pageStage .batch-grid {
+  /* never overflow the card and keep items centered */
+  width: 100%;
+  max-width: 100%;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  justify-items: center;
+  align-content: start;
 }
 
-/* Tweak typography down a notch for the embedded stage */
-#pageStage .winner-card .name { 
+#pageStage .winner-card {
+  /* prevent layout stretch and wrap long names */
+  max-width: 100%;
+  word-break: break-word;
+}
+
+#pageStage .winner-card .name {
   font-size: clamp(28px, 3.2vw, 64px);
 }
-#pageStage .winner-card .dept { 
+#pageStage .winner-card .dept {
   font-size: clamp(14px, 1.8vw, 28px);
 }
 
-/* A touch less padding so it breathes on smaller widths */
-#pageStage .stage .stage-inner {
-  padding: clamp(12px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px);
-}
+
 
 body.public-mode .reroll-btn { display: none !important; }
 
@@ -129,7 +155,7 @@ body.public-mode .reroll-btn { display: none !important; }
 
 .prize-header .prize-title{
   margin:0;
-  line-height:3;           /* keep big title tight so centering is predictable */
+  line-height:1.15;           /* keep big title tight so centering is predictable */
 }
 
 .prize-header .stat{
@@ -323,7 +349,7 @@ body.tablet-mode #publicView { display:none !important; }
   z-index:2;
   display:grid;
   grid-template-rows:auto auto 1fr auto auto;
-  align-items:start;
+  align-items:center;
   justify-items:center;
   width:100%;
   height:100%;
