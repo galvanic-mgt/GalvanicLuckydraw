@@ -445,21 +445,21 @@
 
   <script src="./app.js"></script>
 
-    <div id="loginGate" class="overlay show" style="background:rgba(0,0,0,.9)">
-  <div class="card" style="min-width:min(90vw,420px); text-align:left">
+<!-- LOGIN OVERLAY (fixed IDs & submit) -->
+<div id="loginGate" class="overlay show" style="background:rgba(0,0,0,.92)">
+  <form id="loginForm" class="card" style="min-width:min(90vw,440px); text-align:left">
     <h3 style="margin-top:0">登入</h3>
-    <label>帳號
-      <input id="lgUser" placeholder="例如：admin" />
-    </label>
-    <label>密碼
-      <input id="lgPass" type="password" placeholder="例如：admin" />
-    </label>
-    <div class="bar" style="margin-top:10px; justify-content:flex-end">
-      <button id="lgDo" class="btn primary" type="button">登入</button>
+    <p class="pill" style="margin:0 0 8px">預設帳號：<strong>admin</strong> ／ 密碼：<strong>admin</strong></p>
+    <div class="grid-2" style="margin-top:8px">
+      <label>帳號 <input id="loginUser" autocomplete="username" /></label>
+      <label>密碼 <input id="loginPass" type="password" autocomplete="current-password" /></label>
     </div>
-    <p class="pill" style="margin-top:8px">預設帳號：admin / admin</p>
-  </div>
+    <div class="bar" style="margin-top:10px; justify-content:flex-end">
+      <button id="btnLogin" class="btn primary" type="submit">登入</button>
+    </div>
+  </form>
 </div>
+
 
 
 

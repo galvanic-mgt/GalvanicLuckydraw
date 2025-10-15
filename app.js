@@ -1284,28 +1284,119 @@ emClone.addEventListener('click', ()=>{
 
 emSearch.addEventListener('input', renderEventsTable);
 
-(function gate(){
-  const gate = document.getElementById('loginGate');
-  const btn  = document.getElementById('lgDo');
+// ===== LOGIN (local only) =====
+(function initLocalLogin(){
+  const USERS_KEY = 'ldraw-users-v1';       // local storage key for users
+  const AUTH_KEY  = 'ldraw-auth-v1';        // who is logged in
 
-  function applyRole(){
-    const session = getSession();    // { user, role, events }
-    if(!session){ gate.classList.add('show'); return; }
-    gate.classList.remove('show');
+  // helpers
+  const getUsers = () => {
+    try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
+    catch { return []; }
+  };
+  const saveUsers = (arr) => localStorage.setItem(USERS_KEY, JSON.stringify(arr));
+  const setAuth  = (u)   => localStorage.setItem(AUTH_KEY, JSON.stringify(u || null));
+  const getAuth  = () => {
+    try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; }
+  };
 
-    // restrict left nav if client
-    if (session.role === 'client'){
-      // show only 「名單」 tab
-      document.querySelectorAll('#cmsNav .nav-item').forEach(b=>{
-        const t = b.getAttribute('data-target');
-        const allow = (t === 'pageRoster');
-        b.style.display = allow ? '' : 'none';
-      });
-      // auto switch to 名單
+  // ensure a default admin/admin if none
+  (function ensureDefaultAdmin(){
+    let users = getUsers();
+    if (!Array.isArray(users) || users.length === 0 || !users.some(u => u.username === 'admin')) {
+      users = users.filter(Boolean);
+      users.push({ username:'admin', password:'admin', role:'admin', events:[] });
+      saveUsers(users);
+    }
+  })();
+
+  // DOM
+  const gate   = document.getElementById('loginGate');
+  const form   = document.getElementById('loginForm');
+  const uEl    = document.getElementById('loginUser');
+  const pEl    = document.getElementById('loginPass');
+  const btn    = document.getElementById('btnLogin');
+
+  // guard: if any of these are missing, do nothing (won't break the app)
+  if (!gate || !form || !uEl || !pEl || !btn) return;
+
+  function applyRoleUI(role){
+    // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
+    const navItems = document.querySelectorAll('#cmsNav .nav-item');
+    navItems.forEach(item => {
+      const target = item.getAttribute('data-target');
+      if (role === 'client') {
+        const visible = (target === 'pageRoster');  // only 名單
+        item.style.display = visible ? '' : 'none';
+        if (!visible) {
+          // also hide the subpage section if currently visible
+          const sec = document.getElementById(target);
+          if (sec) sec.style.display = 'none';
+        }
+      } else {
+        // admin: show all
+        item.style.display = '';
+      }
+    });
+
+    // If client is logged in, switch to CMS view and force 名單 tab active
+    if (role === 'client') {
+      // show CMS main container
+      document.getElementById('cmsView')?.setAttribute('style','');
+      // activate the 名單 tab
       const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
-      rosterBtn && rosterBtn.click();
+      if (rosterBtn) {
+        // deactivate others
+        document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
+        rosterBtn.classList.add('active');
+        // show roster page
+        document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
+        document.getElementById('pageRoster').style.display = 'block';
+      }
     }
   }
+
+  function login(username, password){
+    const users = getUsers();
+    const u = users.find(x => x && x.username === username && x.password === password);
+    if (!u) return false;
+    setAuth({ username:u.username, role:u.role, events:u.events || [] });
+    applyRoleUI(u.role || 'admin');
+    // hide overlay
+    gate.classList.remove('show');
+    gate.style.display = 'none';
+    // optional: re-render anything that depends on role
+    if (typeof renderAll === 'function') renderAll();
+    return true;
+  }
+
+  // auto-restore session
+  (function restoreSession(){
+    const me = getAuth();
+    if (me && me.username) {
+      applyRoleUI(me.role || 'admin');
+      gate.classList.remove('show');
+      gate.style.display = 'none';
+      return;
+    }
+    // show gate
+    gate.classList.add('show');
+    gate.style.display = 'flex';
+  })();
+
+  // handle submit (click or Enter)
+  form.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const ok = login((uEl.value||'').trim(), (pEl.value||'').trim());
+    if (!ok) {
+      btn.disabled = false; // ensure it remains clickable
+      // quick inline feedback without alert()
+      btn.textContent = '登入失敗，重試';
+      setTimeout(()=> btn.textContent = '登入', 1200);
+    }
+  });
+})();
+
 
   if(btn){
     btn.onclick = () => {
@@ -1546,6 +1637,52 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
     a.href=url; a.download='lucky-draw-session.json'; a.click(); URL.revokeObjectURL(url);
   });
+// ---- CSV helpers (place once) ----
+function exportCSV(rows, filename){
+  const csv = rows.map(r => r.map(v => {
+    const s = (v == null ? '' : String(v)).replace(/"/g,'""');
+    return `"${s}"`;
+  }).join(',')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportWinnersCSV(){
+  const peopleIndex = new Map((state.people||[]).map(p => [ `${p.name}||${p.dept||''}`, p ]));
+  const rows = [
+    ['姓名','部門','桌號','座位','獎項','中獎時間','備註/碼']
+  ];
+  (state.winners || []).forEach(w => {
+    const key = `${w.name}||${w.dept||''}`;
+    const p = peopleIndex.get(key) || {};
+    rows.push([
+      w.name || '',
+      w.dept || '',
+      p.table || '',
+      p.seat  || '',
+      w.prizeName || w.prize || '',
+      w.time ? new Date(w.time).toLocaleString() : '',
+      p.code || ''
+    ]);
+  });
+  exportCSV(rows, 'winners_full.csv');
+}
+
+// ---- bind once, without declaring a duplicate const ----
+(function bindExportWinners(){
+  const el = document.getElementById('exportWinners');
+  if (!el) return;
+  // ensure we don't double-bind if this runs again
+  if (el.dataset.bound === '1') return;
+  el.dataset.bound = '1';
+  el.addEventListener('click', exportWinnersCSV);
+})();
+
+
   importSessionInput.addEventListener('change', e=>{
     const f=e.target.files?.[0]; if(!f) return;
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
@@ -1585,30 +1722,6 @@ function canAccessEvent(user, eventId){
   return list.includes('*') || list.includes(eventId);
 }
 
-
-const btnExportWinners = document.getElementById('exportWinners');
-if (btnExportWinners){
-  btnExportWinners.addEventListener('click', ()=>{
-    const peopleIndex = new Map((state.people||[]).map(p => [ `${p.name}||${p.dept||''}`, p ]));
-    const rows = [
-      ['姓名','部門','桌號','座位','獎項','中獎時間','備註/碼']
-    ];
-    (state.winners || []).forEach(w => {
-      const key = `${w.name}||${w.dept||''}`;
-      const p = peopleIndex.get(key) || {};
-      rows.push([
-        w.name || '',
-        w.dept || '',
-        p.table || '',
-        p.seat  || '',
-        w.prizeName || w.prize || '',
-        w.time ? new Date(w.time).toLocaleString() : '',
-        p.code || ''
-      ]);
-    });
-    exportCSV(rows, 'winners_full.csv');
-  });
-}
 
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{
@@ -1778,7 +1891,7 @@ setTimeout(() => {
   $('fullscreen').addEventListener('click', ()=>{ const d=document.documentElement; d.requestFullscreen && d.requestFullscreen(); });
 
   renderAll();
-});
+
 
 function renderEventList(){
   eventList.innerHTML='';
