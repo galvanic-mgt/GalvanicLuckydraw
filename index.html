@@ -8,6 +8,24 @@
   <link rel="icon" href="data:,">
 </head>
 <body>
+              <!-- LOGIN OVERLAY (local-only) -->
+          <div id="loginGate" class="overlay" style="display:none">
+            <form id="loginForm" class="card" style="min-width:320px; background:#121a2b; padding:16px">
+              <h3 style="margin-top:0">登入</h3>
+              <label style="display:block; margin:8px 0">
+                帳號
+                <input id="loginUser" placeholder="admin" />
+              </label>
+              <label style="display:block; margin:8px 0">
+                密碼
+                <input id="loginPass" type="password" placeholder="admin" />
+              </label>
+              <div class="bar" style="margin-top:12px">
+                <button id="btnLogin" class="btn primary" type="submit">登入</button>
+              </div>
+            </form>
+          </div>
+
   <header>
     <div class="container row">
       <div class="tabs">
@@ -440,28 +458,13 @@
   <!-- Optional XLSX reader (only needed if你要直接讀 .xlsx；不加也可用 CSV) -->
   
   <script src="./qrcode.min.js"></script>
-  <!-- SheetJS (XLSX) -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <script src="./app.js"></script>
+<!-- NEW: load login first -->
+<script src="./login.js"></script>
 
-<!-- LOGIN OVERLAY (fixed IDs & submit) -->
-<div id="loginGate" class="overlay show" style="background:rgba(0,0,0,.92)">
-  <form id="loginForm" class="card" style="min-width:min(90vw,440px); text-align:left">
-    <h3 style="margin-top:0">登入</h3>
-    <p class="pill" style="margin:0 0 8px">預設帳號：<strong>admin</strong> ／ 密碼：<strong>admin</strong></p>
-    <div class="grid-2" style="margin-top:8px">
-      <label>帳號 <input id="loginUser" autocomplete="username" /></label>
-      <label>密碼 <input id="loginPass" type="password" autocomplete="current-password" /></label>
-    </div>
-    <div class="bar" style="margin-top:10px; justify-content:flex-end">
-      <button id="btnLogin" class="btn primary" type="submit">登入</button>
-    </div>
-  </form>
-</div>
-
-
-
-
+<!-- then the rest of your app -->
+<script src="./app.js"></script>
 </body>
 </html>
+

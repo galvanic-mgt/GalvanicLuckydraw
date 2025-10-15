@@ -1129,36 +1129,6 @@ const tabletStageEl = document.querySelector('#tabletView .stage');
 confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
 
 
-
-// limit client to 名單 page
-if ((account.role||'client') !== 'admin') {
-  // left nav buttons exist already in index.html
-  const nav = document.getElementById('cmsNav');
-  if (nav) {
-    nav.querySelectorAll('.nav-item').forEach(btn=>{
-      const target = btn.getAttribute('data-target');
-      const allowed = (target === 'pageRoster'); // only 名單
-      btn.disabled = !allowed;
-      btn.style.opacity = allowed ? '1' : '.35';
-      btn.style.pointerEvents = allowed ? 'auto' : 'none';
-    });
-  }
-  // force show 名單
-  const rosterBtn = document.querySelector('.nav-item[data-target="pageRoster"]');
-  rosterBtn?.click();
-}
-
-
-// allow Enter key to submit
-if (lgUserEl && lgPassEl) {
-  [lgUserEl, lgPassEl].forEach(el=>{
-    el.addEventListener('keydown', (e)=>{
-      if (e.key === 'Enter') lgBtnEl?.click();
-    });
-  });
-}
-
-
   // sidebar + events
   eventList=$('eventList'); newEventName=$('newEventName'); newClientName=$('newClientName'); addEventBtn=$('addEvent');
   evTitle=$('evTitle'); evClient=$('evClient'); evDateTime=$('evDateTime'); evVenue=$('evVenue'); evAddress=$('evAddress'); evMapUrl=$('evMapUrl'); evBus=$('evBus'); evTrain=$('evTrain'); evParking=$('evParking'); evNotes=$('evNotes');
@@ -1397,73 +1367,7 @@ emSearch.addEventListener('input', renderEventsTable);
   });
 })();
 
-
-  if(btn){
-    btn.onclick = () => {
-      const u = (document.getElementById('lgUser').value || '').trim();
-      const p = (document.getElementById('lgPass').value || '').trim();
-      const users = getUsers();
-      if(users[u] && users[u].pass === p){
-        const evId = (store.current().id || '');
-        if (users[u].role === 'client' && !canAccessEvent(users[u], evId)){
-          alert('此用戶無權存取目前活動');
-          return;
-        }
-        setSession({ user:u, role:users[u].role, events:users[u].events || [] });
-        applyRole();
-      } else {
-        alert('帳號或密碼不正確');
-      }
-    };
-  }
-  applyRole();
-})();
-
-(function usersAdmin(){
-  const table = document.getElementById('uTable');
-  const createBtn = document.getElementById('uCreate');
-  if(!table || !createBtn) return;
-
-  function render(){
-    const u = getUsers();
-    table.innerHTML = Object.entries(u).map(([name,info])=>`
-      <tr>
-        <td>${name}</td>
-        <td>${info.role}</td>
-        <td>${(info.events||['*']).join(', ')}</td>
-        <td><button class="btn danger" data-del="${name}">刪除</button></td>
-      </tr>
-    `).join('');
-    table.querySelectorAll('[data-del]').forEach(b=>{
-      b.onclick = ()=>{
-        const key = b.getAttribute('data-del');
-        const u = getUsers(); delete u[key]; saveUsers(u); render();
-      };
-    });
-  }
-
-  createBtn.onclick = () => {
-    const name = (document.getElementById('uNewUser').value||'').trim();
-    const pass = (document.getElementById('uNewPass').value||'').trim();
-    const role = document.getElementById('uNewRole').value;
-    const events = (document.getElementById('uEventPick').value || '*')
-      .split(',')
-      .map(s=>s.trim())
-      .filter(Boolean);
-
-    if(!name || !pass){ alert('請填帳號與密碼'); return; }
-    const u = getUsers();
-    if(u[name]){ alert('用戶已存在'); return; }
-    u[name] = { pass, role, events: events.length ? events : ['*'] };
-    saveUsers(u);
-    render();
-    alert('已建立用戶');
-  };
-
-  render();
-})();
-
-
+});
 
 // ---- Top tabs + routing (CMS / Public / Tablet)
 const tabTablet  = $('tabTablet');
@@ -1700,28 +1604,6 @@ function exportCSV(rows, filename){
   a.click();
   URL.revokeObjectURL(a.href);
 }
-
-const USER_KEY = 'ldraw-users-v1';
-const SESSION_KEY = 'ldraw-session-v1';
-
-function getUsers(){ try{ return JSON.parse(localStorage.getItem(USER_KEY)) || {}; }catch{ return {}; } }
-function saveUsers(u){ localStorage.setItem(USER_KEY, JSON.stringify(u||{})); }
-function getSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; }catch{ return null; } }
-function setSession(s){ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
-
-function ensureDefaultAdmin(){
-  const u = getUsers();
-  if(!u['admin']){ u['admin'] = { pass:'admin', role:'admin', events:['*'] }; saveUsers(u); }
-}
-ensureDefaultAdmin();
-
-function canAccessEvent(user, eventId){
-  if(!user) return false;
-  if(user.role === 'admin') return true;
-  const list = user.events || [];
-  return list.includes('*') || list.includes(eventId);
-}
-
 
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{
