@@ -1128,38 +1128,7 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 const tabletStageEl = document.querySelector('#tabletView .stage');
 confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
 
-// ===== Login gate wiring (overlay -> app) =====
-ensureDefaultAdmin();
 
-const gateEl   = document.getElementById('loginGate');
-const lgUserEl = document.getElementById('lgUser');
-const lgPassEl = document.getElementById('lgPass');
-const lgBtnEl  = document.getElementById('lgBtn');
-
-function enterApp(account){
-  // Remember who is logged in this session (optional)
-  sessionStorage.setItem('ldraw-session-user', JSON.stringify(account));
-
-  // Role can be used to show/hide CMS tabs
-  document.body.dataset.role = account.role || 'client';
-
-  // Hide login overlay
-  if (gateEl) gateEl.classList.remove('show');
-
-  // If you already have any “post-login” renders, call them here:
-  // renderAll();  // only if your app expects a render at this point
-}
-
-// click handler
-if (lgBtnEl) {
-  lgBtnEl.addEventListener('click', ()=>{
-    const u = (lgUserEl?.value || '').trim();
-    const p = (lgPassEl?.value || '').trim();
-    const acc = authUser(u, p);
-    if (!acc) { alert('帳號或密碼錯誤'); return; }
-    enterApp(acc);
-  });
-}
 
 // limit client to 名單 page
 if ((account.role||'client') !== 'admin') {
