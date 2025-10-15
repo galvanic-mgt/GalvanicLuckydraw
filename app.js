@@ -217,6 +217,29 @@ function burstConfetti(canvasId){
   confettiEngines.set(canvasId, { reset: stop });
 }
 
+// ===== Local users (super-simple, localStorage) =====
+const USERS_KEY = 'ldraw-users-v1';
+
+function loadUsers(){
+  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
+  catch { return []; }
+}
+function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
+
+// Ensure a default admin admin/admin exists so you can get in
+function ensureDefaultAdmin(){
+  const list = loadUsers();
+  if (!list.some(u => u.user === 'admin')) {
+    list.push({ user:'admin', pass:'admin', role:'admin', events:'*' });
+    saveUsers(list);
+  }
+}
+
+// Return the matched account or null
+function authUser(user, pass){
+  const list = loadUsers();
+  return list.find(u => u.user === user && u.pass === pass) || null;
+}
 
 // ===== Firebase (REST) tiny wrapper =====
 const FB = {
@@ -1105,6 +1128,66 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 const tabletStageEl = document.querySelector('#tabletView .stage');
 confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
 
+// ===== Login gate wiring (overlay -> app) =====
+ensureDefaultAdmin();
+
+const gateEl   = document.getElementById('loginGate');
+const lgUserEl = document.getElementById('lgUser');
+const lgPassEl = document.getElementById('lgPass');
+const lgBtnEl  = document.getElementById('lgBtn');
+
+function enterApp(account){
+  // Remember who is logged in this session (optional)
+  sessionStorage.setItem('ldraw-session-user', JSON.stringify(account));
+
+  // Role can be used to show/hide CMS tabs
+  document.body.dataset.role = account.role || 'client';
+
+  // Hide login overlay
+  if (gateEl) gateEl.classList.remove('show');
+
+  // If you already have any “post-login” renders, call them here:
+  // renderAll();  // only if your app expects a render at this point
+}
+
+// click handler
+if (lgBtnEl) {
+  lgBtnEl.addEventListener('click', ()=>{
+    const u = (lgUserEl?.value || '').trim();
+    const p = (lgPassEl?.value || '').trim();
+    const acc = authUser(u, p);
+    if (!acc) { alert('帳號或密碼錯誤'); return; }
+    enterApp(acc);
+  });
+}
+
+// limit client to 名單 page
+if ((account.role||'client') !== 'admin') {
+  // left nav buttons exist already in index.html
+  const nav = document.getElementById('cmsNav');
+  if (nav) {
+    nav.querySelectorAll('.nav-item').forEach(btn=>{
+      const target = btn.getAttribute('data-target');
+      const allowed = (target === 'pageRoster'); // only 名單
+      btn.disabled = !allowed;
+      btn.style.opacity = allowed ? '1' : '.35';
+      btn.style.pointerEvents = allowed ? 'auto' : 'none';
+    });
+  }
+  // force show 名單
+  const rosterBtn = document.querySelector('.nav-item[data-target="pageRoster"]');
+  rosterBtn?.click();
+}
+
+
+// allow Enter key to submit
+if (lgUserEl && lgPassEl) {
+  [lgUserEl, lgPassEl].forEach(el=>{
+    el.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter') lgBtnEl?.click();
+    });
+  });
+}
 
 
   // sidebar + events
