@@ -445,17 +445,23 @@
 
   <script src="./app.js"></script>
 
-  <div id="loginGate" class="overlay show" style="background:rgba(0,0,0,.9)">
+    <div id="loginGate" class="overlay show" style="background:rgba(0,0,0,.9)">
   <div class="card" style="min-width:min(90vw,420px); text-align:left">
     <h3 style="margin-top:0">登入</h3>
-    <label>帳號 <input id="lgUser" /></label>
-    <label>密碼 <input id="lgPass" type="password" /></label>
-    <div class="bar" style="margin-top:8px">
+    <label>帳號
+      <input id="lgUser" placeholder="例如：admin" />
+    </label>
+    <label>密碼
+      <input id="lgPass" type="password" placeholder="例如：admin" />
+    </label>
+    <div class="bar" style="margin-top:10px; justify-content:flex-end">
       <button id="lgDo" class="btn primary" type="button">登入</button>
     </div>
-    <p class="pill">預設帳號（若無）：admin / admin</p>
+    <p class="pill" style="margin-top:8px">預設帳號：admin / admin</p>
   </div>
 </div>
+
+
 
 </body>
 </html>

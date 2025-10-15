@@ -1261,7 +1261,7 @@ emSearch.addEventListener('input', renderEventsTable);
       const p = (document.getElementById('lgPass').value || '').trim();
       const users = getUsers();
       if(users[u] && users[u].pass === p){
-        const evId = (getAll().currentId || '');
+        const evId = (store.current().id || '');
         if (users[u].role === 'client' && !canAccessEvent(users[u], evId)){
           alert('此用戶無權存取目前活動');
           return;
