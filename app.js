@@ -344,6 +344,7 @@ if (bc) {
     if (d.type === 'TICK') {
       state = store.load();
       renderAll();
+  updateRosterSortIndicators();
 
     } else if (d.type === 'CELEBRATE') {
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
@@ -1084,6 +1085,32 @@ function setActivePage(targetId){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
+  // === Roster per-column sort buttons (Excel-like) ===
+  function setRosterSort(by, dir){
+    state.rosterSortBy  = by;
+    state.rosterSortDir = dir;
+    store.save(state);
+    updateRosterSortIndicators();
+    renderRosterList();
+  }
+  function updateRosterSortIndicators(){
+    const buttons = document.querySelectorAll('th .sort');
+    buttons.forEach(btn=>{
+      const key = btn.getAttribute('data-key');
+      const dir = btn.getAttribute('data-dir');
+      const on  = (key === (state.rosterSortBy||'name') && dir === (state.rosterSortDir||'asc'));
+      btn.classList.toggle('active', !!on);
+    });
+  }
+  document.addEventListener('click', (e)=>{
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('sort')){
+      const key = t.getAttribute('data-key');
+      const dir = t.getAttribute('data-dir');
+      setRosterSort(key, dir);
+    }
+  });
+
   const tabPublic = $('tabPublic');
   const tabCMS    = $('tabCMS');
 
@@ -1805,6 +1832,7 @@ function renderEventList(){
     tr.append(tdTime, tdPrize, tdSwap, tdOps);
     tbody.appendChild(tr);
   });
+  updateRosterSortIndicators();
 }
     function undoReroll(rrId){
   state.rerolls = state.rerolls || [];
@@ -2049,6 +2077,7 @@ function renderRosterList(){
     tr.append(tdCode, tdName, tdDept, tdTable, tdSeat, tdStatus, tdOps);
     tbody.appendChild(tr);
   });
+  updateRosterSortIndicators();
 }
 
 
