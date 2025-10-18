@@ -625,9 +625,7 @@ let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
 let publicPrize2, batchGrid2, winnersChips2, bgEl2, logoEl2, bannerEl2, confetti2, ctx2, confettiParticles2=[];
-// Tablet stage refs (mirror of public & embedded)
-let publicPrize3, batchGrid3, winnersChips3, bgEl3, bannerEl3, logoEl3;
-
+let bgEl3, bannerEl3, logoEl3;
 let eventList, newEventName, newClientName, addEventBtn;
 let evTitle, evClient, evDateTime, evVenue, evAddress, evMapUrl, evBus, evTrain, evParking, evNotes;
 let currentEventName, currentClient, currentIdLabel;
@@ -1099,12 +1097,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   publicPrizeEl=$('publicPrize'); statsRemain=$('statsRemain'); statsWinners=$('statsWinners'); statsPrizeLeft=$('statsPrizeLeft');
   batchGrid=$('currentBatch'); winnersChips=$('winnersChips');
   bgEl=$('bgEl'); logoEl=$('logoEl'); bannerEl=$('banner');
-
-  publicPrize3  = document.getElementById('publicPrize3');
-  batchGrid3    = document.getElementById('currentBatch3');
-  winnersChips3 = document.getElementById('winnersChips3');
-
-
   // Embedded stage refs
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
@@ -1163,9 +1155,6 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   addName.value=''; addDept.value=''; addPresent.checked=false;
   renderRosterList(); updatePublicPanel();
 });
-
-searchInput.addEventListener('input', renderRosterList);
-
   // prizes
   prizeRows=$('prizeRows'); prizeSearch=$('prizeSearch'); newPrizeName=$('newPrizeName'); newPrizeQuota=$('newPrizeQuota'); prizeFile=$('prizeFile'); importPrizesBtn=$('importPrizes');
 
@@ -1592,18 +1581,8 @@ function exportWinnersCSV(){
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
   });
   // --- Export helpers + "Winners (full)" CSV ---
-function exportCSV(rows, filename){
-  const csv = rows.map(r => r.map(v => {
-    const s = (v == null ? '' : String(v)).replace(/"/g,'""');
-    return `"${s}"`;
-  }).join(',')).join('\r\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+
+
 
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{
@@ -1711,13 +1690,6 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
     const prize=state.prizes.find(x=>x.id===lp.prizeId); if(!prize) return;
     lp.people.forEach(person=>{ removeWinnerRecords(prize, person); state.remaining.push(person); });
     state.currentBatch=[]; state.lastPick=null; state.lastConfirmed=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
-  });
-  btnExportWinners.addEventListener('click', ()=>{
-    const header='name,dept,prize,time\n';
-    const rows=state.winners.map(w=>`${safe(w.name)},${safe(w.dept)},${safe(w.prizeName||'')},${w.time}`);
-    const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='winners.csv'; a.click(); URL.revokeObjectURL(url);
   });
 
   // after your current '#draw' logic runs and DOM updates:
@@ -2038,32 +2010,7 @@ function renderRosterList(){
       }
     };
 
-    const rosterSortSel = document.getElementById('rosterSort');
-if (rosterSortSel){
-  rosterSortSel.addEventListener('change', () => {
-    rosterView.sort = rosterSortSel.value;
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
 
-const pageSizeInput = document.getElementById('pageSize2');
-if (pageSizeInput){
-  pageSizeInput.addEventListener('change', () => {
-    rosterView.pageSize = parseInt(pageSizeInput.value || '12', 10);
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
-
-const searchBox = document.getElementById('search');
-if (searchBox){
-  searchBox.addEventListener('input', () => {
-    rosterView.q = searchBox.value || '';
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
 
 
     tdStatus.appendChild(badge);
