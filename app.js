@@ -116,7 +116,18 @@ function latestWinnerCards(containerId){
 // --- Event management helpers ---
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 function createEvent(name, client){
-  const id = store.create(name, client);
+  const all = loadAll();
+  const id = genId();
+  all.events[id] = {
+    name: name || ('活動 ' + (Object.keys(all.events).length + 1)),
+    client: client || '',
+    listed: true,
+    data: baseState()
+  };
+  all.currentId = id; 
+  saveAll(all);
+  // NEW: cloud mirror
+  cloudUpsertEventMeta(id);
   return id;
 }
 function cloneCurrentEvent(newName){
@@ -249,6 +260,39 @@ const FB = {
   patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
 };
 
+// --- Cloud mirror for 活動管理 (events list) ---
+async function cloudUpsertEventMeta(id){
+  const all = loadAll(); const ev = all.events[id];
+  if (!ev) return;
+  const meta = { name: ev.name || '（未命名）', client: ev.client || '', listed: ev.listed !== false };
+  // Store meta under the event, and also in a flat index for listing
+  await FB.patch(`/events/${id}/meta`, meta).catch(()=>{});
+  await FB.put(`/events_index/${id}`, meta).catch(()=>{});
+}
+
+async function cloudDeleteEvent(id){
+  await FB.put(`/events/${id}`, null).catch(()=>{});
+  await FB.put(`/events_index/${id}`, null).catch(()=>{});
+}
+
+async function cloudPullEventsIndexIntoLocal(){
+  const idx = await FB.get(`/events_index`) || {};
+  const all = loadAll();
+  Object.entries(idx).forEach(([id, meta])=>{
+    if (!all.events[id]) {
+      all.events[id] = { name: meta?.name || '（未命名）', client: meta?.client || '', listed: meta?.listed !== false, data: baseState() };
+    } else {
+      // keep local meta aligned
+      all.events[id].name   = meta?.name   ?? all.events[id].name;
+      all.events[id].client = meta?.client ?? all.events[id].client;
+      all.events[id].listed = (meta?.listed !== false);
+    }
+  });
+  if (!all.currentId) all.currentId = Object.keys(all.events)[0] || all.currentId;
+  saveAll(all);
+}
+
+
 
 function rebuildRemainingFromPeople(){
   const winnersSet = new Set(state.winners.map(w => `${w.name}||${w.dept||''}`));
@@ -305,10 +349,19 @@ const store={
       listed: true,
       data: baseState()
     };
-    all.currentId = id; saveAll(all); return id;
+    all.currentId = id; saveAll(all); cloudUpsertEventMeta(id); return id;
   },
-  renameCurrent(name,client){ const all=loadAll(); if(all.events[all.currentId]){ if(name) all.events[all.currentId].name=name; if(client!==undefined) all.events[all.currentId].client=client; saveAll(all);} }
-};
+  renameCurrent(name, client){
+    const all = loadAll();
+    if (all.events[all.currentId]) {
+      if (name)   all.events[all.currentId].name   = name;
+      if (client !== undefined) all.events[all.currentId].client = client;
+      saveAll(all);
+      // NEW: cloud mirror
+      cloudUpsertEventMeta(all.currentId);
+    }
+  }
+  };
 
 // ===== Sync layer (same-device, multi-tab/window) =====
 let bc;
@@ -1197,9 +1250,9 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   // QR
   landingURL=$('landingURL'); copyURL=$('copyURL'); openLanding=$('openLanding'); qrBox=$('qrBox'); downloadQR=$('downloadQR'); landingLink=$('landingLink');
   
+  // NEW: load cloud events index so 活動管理 lists cloud events on fresh browsers
 
   state = store.load();
-
   // Boot: pull event info from Firebase (if available) and merge into local state.
 (async ()=>{
   try {
@@ -1631,6 +1684,7 @@ function exportWinnersCSV(){
   exportCSV(rows, 'winners_full.csv');
 }
 
+
 // ---- bind once, without declaring a duplicate const ----
 (function bindExportWinners(){
   const el = document.getElementById('exportWinners');
@@ -1741,6 +1795,16 @@ btnCountdown.addEventListener('click', async ()=>{
     addWinnerRecords(prize,currentPick); state.lastConfirmed=currentPick; state.lastPick={prizeId:prize.id,people:[currentPick]}; state.currentBatch=[currentPick];
     currentPick=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
 
+// Pull the cloud events index at boot so 活動管理/活動清單 show cloud events on fresh browsers
+;(async ()=>{
+  try{
+    await cloudPullEventsIndexIntoLocal();
+    state = store.load();   // refresh local state after merge
+    // (renderAll() is called later in boot; no need to call it here)
+  }catch(e){
+    console.warn('Cloud events index pull failed:', e);
+  }
+})();
 
 
 // CMS: burst on the actual winner card(s)
@@ -2187,6 +2251,7 @@ function renderRosterList(){
         saveAll(all);
         renderEventsTable();
         renderEventList();
+        cloudUpsertEventMeta(id);
       }
     };
 
@@ -2199,6 +2264,7 @@ function renderRosterList(){
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
+      cloudUpsertEventMeta(newId);
     };
 
     const deleteBtn = document.createElement('button');
@@ -2214,6 +2280,7 @@ function renderRosterList(){
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
+      cloudDeleteEvent(id);
     };
 
     tdOps.append(switchBtn, saveBtn, duplicateBtn, deleteBtn);
