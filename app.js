@@ -343,39 +343,6 @@ if (bc) {
 
     if (d.type === 'TICK') {
       state = store.load();
-  /*__BOOT_EVENT_INFO_PULL__*/
-  ;(async()=>{
-    try {
-      const eid = (store.current()?.id || '').trim();
-      if (!eid) throw new Error('no-event-id');
-      const info = await FB.get(`/events/${eid}/info`);
-      if (info && typeof info === 'object') {
-        state.eventInfo = Object.assign({}, state.eventInfo || {}, info);
-        store.save(state);
-        renderAll();
-      }
-      console.debug('[eventInfo] pulled from cloud for', eid, info);
-    } catch (e) {
-      console.warn('[eventInfo] cloud pull skipped/failed:', e && e.message || e);
-    }
-  })();
-
-  /*__EVENT_INFO_FETCH__*/
-  ;(async()=>{
-    try {
-      const eid = (store.current()?.id || '').trim();
-      if (!eid) return;
-      const info = await FB.get(`/events/${eid}/info`);
-      if (info && typeof info === 'object') {
-        state.eventInfo = Object.assign({}, state.eventInfo || {}, info);
-        store.save(state);
-        renderAll();
-      }
-    } catch (e) {
-      // non-blocking
-    }
-  })();
-
       renderAll();
   try{ if (typeof updateRosterSortIndicators === 'function') updateRosterSortIndicators(); }catch{}
 
@@ -1233,6 +1200,30 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
 
   state = store.load();
 
+  // Boot: pull event info from Firebase (if available) and merge into local state.
+(async ()=>{
+  try {
+    const eid =
+      (store.current && store.current()?.id) ||
+      state?.id ||
+      state?.eventId ||
+      '';
+    const eventId = String(eid).trim();
+    if (!eventId) return;
+
+    const info = await FB.get(`/events/${eventId}/info`);
+    if (info && typeof info === 'object') {
+      state.eventInfo = info;  // cloud is source of truth at boot
+      store.save(state);
+      renderAll();
+    }
+  } catch (e) {
+    console.warn('Event info fetch failed:', e);
+  }
+})();
+
+
+
   // Events Manage tab elements
   emNewName = $('emNewName');
   emNewClient = $('emNewClient');
@@ -1585,12 +1576,23 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     const rows=state.people.map(p=>`${safe(p.name)},${safe(p.dept)}`);
     const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='checkin.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = 'checkin.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   });
   btnExportSession.addEventListener('click', ()=>{
     const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='lucky-draw-session.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = 'lucky-draw-session.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
   });
 // ---- CSV helpers (place once) ----
 function exportCSV(rows, filename){
