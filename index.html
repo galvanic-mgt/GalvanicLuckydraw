@@ -6,11 +6,6 @@
   <title>Lucky Draw · CMS & Stage</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:,">
-<style>
-  /* roster sort buttons */
-  th .sort{font-size:12px; line-height:1; padding:0 4px; margin-left:4px; opacity:0.7}
-  th .sort.active{opacity:1; text-decoration:underline}
-</style>
 </head>
 <body>
               <!-- LOGIN OVERLAY (local-only) -->
@@ -99,10 +94,6 @@
 
       <!-- NEW: a huge countdown-draw button centered above the grid -->
       <button id="tabletCountdown" class="big-cta" type="button">⏱️ 倒數抽獎</button>
-
-      <div class="bar" style="justify-content:center;margin:8px 0">
-        <button id="tabletDraw" class="btn" type="button">🎲 即抽</button>
-      </div>
 
       <div id="currentBatch3" class="batch-grid"></div>
       <div class="winners-list" id="winnersChips3"></div>
@@ -219,11 +210,24 @@
           <div class="row">
             <label class="stat">CSV 名單 <input type="file" id="csv" accept=".csv" /></label>
             <button id="preset" class="btn primary" type="button">載入 CSV</button>
-            <button id="exportCheckin"  type="button">匯出報到名單</button>
-            <button id="exportWinners"  type="button">匯出中獎名單（含桌位/獎品）</button>
+            <button id="exportCheckin" class="btn" type="button">匯出已報到名單</button>
+            <button id="exportSession" class="btn" type="button">匯出會話</button>
+            <label class="stat">導入會話 <input type="file" id="importSession" accept=".json" /></label>
           </div>
           <div class="bar">
             <input id="search" type="text" placeholder="搜尋姓名/部門" />
+            <label class="stat">排序
+              <select id="rosterSort">
+                <option value="name-asc">姓名 ↑</option>
+                <option value="name-desc">姓名 ↓</option>
+                <option value="dept-asc">部門 ↑</option>
+                <option value="dept-desc">部門 ↓</option>
+                <option value="table-asc">桌號 ↑</option>
+                <option value="table-desc">桌號 ↓</option>
+                <option value="seat-asc">座位 ↑</option>
+                <option value="seat-desc">座位 ↓</option>
+              </select>
+            </label>
             <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="100" value="12" /></label>
 
             <button id="newPage" class="btn" type="button">+ 加新抽獎頁</button>
@@ -239,10 +243,10 @@
         <table class="table" style="margin-top:8px">
         <thead>
           <tr>
-            <th style="min-width:120px">碼 <button class="sort" data-key="code" data-dir="asc" title="升序">▲</button><button class="sort" data-key="code" data-dir="desc" title="降序">▼</button></th>
-            <th style="min-width:120px">姓名 <button class="sort" data-key="name" data-dir="asc" title="升序">▲</button><button class="sort" data-key="name" data-dir="desc" title="降序">▼</button></th>
-            <th style="min-width:120px">部門 <button class="sort" data-key="dept" data-dir="asc" title="升序">▲</button><button class="sort" data-key="dept" data-dir="desc" title="降序">▼</button></th>
-            <th style="min-width:120px">桌 <button class="sort" data-key="table" data-dir="asc" title="升序">▲</button><button class="sort" data-key="table" data-dir="desc" title="降序">▼</button></th>
+            <th style="min-width:120px">碼</th>
+            <th style="min-width:200px">姓名</th>
+            <th style="min-width:160px">部門</th>
+            <th style="min-width:120px">桌</th>
             <th style="min-width:120px">座</th>
             <th style="min-width:120px">狀態</th>
             <th style="min-width:200px">已抽中</th>
@@ -284,8 +288,8 @@
             <button id="confirm" class="btn success" type="button" disabled>✅ 上台確認</button>
             <button id="undo" class="btn" type="button" disabled>↩️ Undo</button>
             <button id="clearStage" class="btn" type="button">🧹 清空舞台名單</button>
-            <button id="exportWinners" class="btn" type="button">匯出中獎名單（含桌位/獎品）</button>
-            <button id="clearBatch" class="btn warning" type="button">🧹 清空舞台名單</button>
+            <button id="exportWinners" class="btn" type="button">匯出中獎名單（含桌位/獎品</button>
+            <button id="clearBatch" class="btn warning" type="button">🧹 清空舞台名稱</button>
                   <a id="openTablet" class="btn" href="#tablet">平板控制 ↗</a>
             <a id="openFullStage" class="btn" href="#" target="_blank">在新視窗開啟全屏舞台 ↗</a>
           </div>

@@ -116,18 +116,7 @@ function latestWinnerCards(containerId){
 // --- Event management helpers ---
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 function createEvent(name, client){
-  const all = loadAll();
-  const id = genId();
-  all.events[id] = {
-    name: name || ('活動 ' + (Object.keys(all.events).length + 1)),
-    client: client || '',
-    listed: true,
-    data: baseState()
-  };
-  all.currentId = id; 
-  saveAll(all);
-  // NEW: cloud mirror
-  cloudUpsertEventMeta(id);
+  const id = store.create(name, client);
   return id;
 }
 function cloneCurrentEvent(newName){
@@ -260,39 +249,6 @@ const FB = {
   patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
 };
 
-// --- Cloud mirror for 活動管理 (events list) ---
-async function cloudUpsertEventMeta(id){
-  const all = loadAll(); const ev = all.events[id];
-  if (!ev) return;
-  const meta = { name: ev.name || '（未命名）', client: ev.client || '', listed: ev.listed !== false };
-  // Store meta under the event, and also in a flat index for listing
-  await FB.patch(`/events/${id}/meta`, meta).catch(()=>{});
-  await FB.put(`/events_index/${id}`, meta).catch(()=>{});
-}
-
-async function cloudDeleteEvent(id){
-  await FB.put(`/events/${id}`, null).catch(()=>{});
-  await FB.put(`/events_index/${id}`, null).catch(()=>{});
-}
-
-async function cloudPullEventsIndexIntoLocal(){
-  const idx = await FB.get(`/events_index`) || {};
-  const all = loadAll();
-  Object.entries(idx).forEach(([id, meta])=>{
-    if (!all.events[id]) {
-      all.events[id] = { name: meta?.name || '（未命名）', client: meta?.client || '', listed: meta?.listed !== false, data: baseState() };
-    } else {
-      // keep local meta aligned
-      all.events[id].name   = meta?.name   ?? all.events[id].name;
-      all.events[id].client = meta?.client ?? all.events[id].client;
-      all.events[id].listed = (meta?.listed !== false);
-    }
-  });
-  if (!all.currentId) all.currentId = Object.keys(all.events)[0] || all.currentId;
-  saveAll(all);
-}
-
-
 
 function rebuildRemainingFromPeople(){
   const winnersSet = new Set(state.winners.map(w => `${w.name}||${w.dept||''}`));
@@ -349,19 +305,10 @@ const store={
       listed: true,
       data: baseState()
     };
-    all.currentId = id; saveAll(all); cloudUpsertEventMeta(id); return id;
+    all.currentId = id; saveAll(all); return id;
   },
-  renameCurrent(name, client){
-    const all = loadAll();
-    if (all.events[all.currentId]) {
-      if (name)   all.events[all.currentId].name   = name;
-      if (client !== undefined) all.events[all.currentId].client = client;
-      saveAll(all);
-      // NEW: cloud mirror
-      cloudUpsertEventMeta(all.currentId);
-    }
-  }
-  };
+  renameCurrent(name,client){ const all=loadAll(); if(all.events[all.currentId]){ if(name) all.events[all.currentId].name=name; if(client!==undefined) all.events[all.currentId].client=client; saveAll(all);} }
+};
 
 // ===== Sync layer (same-device, multi-tab/window) =====
 let bc;
@@ -397,7 +344,6 @@ if (bc) {
     if (d.type === 'TICK') {
       state = store.load();
       renderAll();
-  try{ if (typeof updateRosterSortIndicators === 'function') updateRosterSortIndicators(); }catch{}
 
     } else if (d.type === 'CELEBRATE') {
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
@@ -679,7 +625,9 @@ let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
 let publicPrize2, batchGrid2, winnersChips2, bgEl2, logoEl2, bannerEl2, confetti2, ctx2, confettiParticles2=[];
-let bgEl3, bannerEl3, logoEl3;
+// Tablet stage refs (mirror of public & embedded)
+let publicPrize3, batchGrid3, winnersChips3, bgEl3, bannerEl3, logoEl3;
+
 let eventList, newEventName, newClientName, addEventBtn;
 let evTitle, evClient, evDateTime, evVenue, evAddress, evMapUrl, evBus, evTrain, evParking, evNotes;
 let currentEventName, currentClient, currentIdLabel;
@@ -1138,32 +1086,6 @@ function setActivePage(targetId){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
-  // === Roster per-column sort buttons (Excel-like) ===
-  function setRosterSort(by, dir){
-    state.rosterSortBy  = by;
-    state.rosterSortDir = dir;
-    store.save(state);
-    updateRosterSortIndicators();
-    renderRosterList();
-  }
-  function updateRosterSortIndicators(){
-    const buttons = document.querySelectorAll('th .sort');
-    buttons.forEach(btn=>{
-      const key = btn.getAttribute('data-key');
-      const dir = btn.getAttribute('data-dir');
-      const on  = (key === (state.rosterSortBy||'name') && dir === (state.rosterSortDir||'asc'));
-      btn.classList.toggle('active', !!on);
-    });
-  }
-  document.addEventListener('click', (e)=>{
-    const t = e.target;
-    if (t && t.classList && t.classList.contains('sort')){
-      const key = t.getAttribute('data-key');
-      const dir = t.getAttribute('data-dir');
-      setRosterSort(key, dir);
-    }
-  });
-
   const tabPublic = $('tabPublic');
   const tabCMS    = $('tabCMS');
 
@@ -1177,6 +1099,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   publicPrizeEl=$('publicPrize'); statsRemain=$('statsRemain'); statsWinners=$('statsWinners'); statsPrizeLeft=$('statsPrizeLeft');
   batchGrid=$('currentBatch'); winnersChips=$('winnersChips');
   bgEl=$('bgEl'); logoEl=$('logoEl'); bannerEl=$('banner');
+
+  publicPrize3  = document.getElementById('publicPrize3');
+  batchGrid3    = document.getElementById('currentBatch3');
+  winnersChips3 = document.getElementById('winnersChips3');
+
+
   // Embedded stage refs
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
@@ -1235,6 +1163,9 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   addName.value=''; addDept.value=''; addPresent.checked=false;
   renderRosterList(); updatePublicPanel();
 });
+
+searchInput.addEventListener('input', renderRosterList);
+
   // prizes
   prizeRows=$('prizeRows'); prizeSearch=$('prizeSearch'); newPrizeName=$('newPrizeName'); newPrizeQuota=$('newPrizeQuota'); prizeFile=$('prizeFile'); importPrizesBtn=$('importPrizes');
 
@@ -1250,37 +1181,8 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   // QR
   landingURL=$('landingURL'); copyURL=$('copyURL'); openLanding=$('openLanding'); qrBox=$('qrBox'); downloadQR=$('downloadQR'); landingLink=$('landingLink');
   
-  // NEW: load cloud events index so 活動管理 lists cloud events on fresh browsers
 
   state = store.load();
-  // Boot: pull event info from Firebase (if available) and merge into local state.
-(async ()=>{
-  try {
-    const eid =
-      (store.current && store.current()?.id) ||
-      state?.id ||
-      state?.eventId ||
-      '';
-    const eventId = String(eid).trim();
-    if (!eventId) return;
-
-    const info = await FB.get(`/events/${eventId}/info`);
-    if (info && typeof info === 'object') {
-      state.eventInfo = info;  // cloud is source of truth at boot
-      store.save(state);
-      renderAll();
-    }
-    if (!info || typeof info !== 'object' || info.error) {
-  console.warn('[Event info] bad response:', info);
-  return; // don't overwrite local with junk
-}
-
-  } catch (e) {
-    console.warn('Event info fetch failed:', e);
-  }
-})();
-
-
 
   // Events Manage tab elements
   emNewName = $('emNewName');
@@ -1306,13 +1208,6 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   try {
     const eventId = store.current().id;
     const cloud = await FB.get(`/events/${eventId}/guests`) || {};
-    // guard: if Firebase returned an error or a non-object, don't merge
-if (!cloud || typeof cloud !== 'object' || cloud.error) {
-  console.warn('[Cloud guests] bad response:', cloud);
-  alert('無法讀取雲端名單（可能是權限或 eventId 錯誤）。請檢查 Firebase 讀取規則與目前活動 ID。');
-  return;
-}
-
     const mapKey = (x)=> `${(x.name||'').trim()}||${(x.dept||'').trim()}`;
     const localMap = new Map((state.people||[]).map(p=>[mapKey(p), p]));
 
@@ -1575,9 +1470,7 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
       parking: evParking.value||'',
       notes: evNotes.value||'',
     };
-    store.save(state); renderAll();
-    ;(()=>{ const eid = (store.current()?.id || '').trim(); if (!eid) return; FB.put(`/events/${eid}/info`, state.eventInfo).catch(()=>{}); })();
-    alert('已儲存活動資訊');
+    store.save(state); renderAll(); alert('已儲存活動資訊');
   });
 
   // assets
@@ -1641,23 +1534,12 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     const rows=state.people.map(p=>`${safe(p.name)},${safe(p.dept)}`);
     const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href = url;
-    a.download = 'checkin.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    a.href=url; a.download='checkin.csv'; a.click(); URL.revokeObjectURL(url);
   });
   btnExportSession.addEventListener('click', ()=>{
     const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href = url;
-    a.download = 'lucky-draw-session.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
+    a.href=url; a.download='lucky-draw-session.json'; a.click(); URL.revokeObjectURL(url);
   });
 // ---- CSV helpers (place once) ----
 function exportCSV(rows, filename){
@@ -1669,9 +1551,7 @@ function exportCSV(rows, filename){
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
-  document.body.appendChild(a);
   a.click();
-  a.remove();
   URL.revokeObjectURL(a.href);
 }
 
@@ -1696,7 +1576,6 @@ function exportWinnersCSV(){
   exportCSV(rows, 'winners_full.csv');
 }
 
-
 // ---- bind once, without declaring a duplicate const ----
 (function bindExportWinners(){
   const el = document.getElementById('exportWinners');
@@ -1712,9 +1591,6 @@ function exportWinnersCSV(){
     const f=e.target.files?.[0]; if(!f) return;
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
   });
-  // --- Export helpers + "Winners (full)" CSV ---
-
-
 
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{
@@ -1807,16 +1683,6 @@ btnCountdown.addEventListener('click', async ()=>{
     addWinnerRecords(prize,currentPick); state.lastConfirmed=currentPick; state.lastPick={prizeId:prize.id,people:[currentPick]}; state.currentBatch=[currentPick];
     currentPick=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
 
-// Pull the cloud events index at boot so 活動管理/活動清單 show cloud events on fresh browsers
-;(async ()=>{
-  try{
-    await cloudPullEventsIndexIntoLocal();
-    state = store.load();   // refresh local state after merge
-    // (renderAll() is called later in boot; no need to call it here)
-  }catch(e){
-    console.warn('Cloud events index pull failed:', e);
-  }
-})();
 
 
 // CMS: burst on the actual winner card(s)
@@ -1832,6 +1698,13 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
     const prize=state.prizes.find(x=>x.id===lp.prizeId); if(!prize) return;
     lp.people.forEach(person=>{ removeWinnerRecords(prize, person); state.remaining.push(person); });
     state.currentBatch=[]; state.lastPick=null; state.lastConfirmed=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
+  });
+  btnExportWinners.addEventListener('click', ()=>{
+    const header='name,dept,prize,time\n';
+    const rows=state.winners.map(w=>`${safe(w.name)},${safe(w.dept)},${safe(w.prizeName||'')},${w.time}`);
+    const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download='winners.csv'; a.click(); URL.revokeObjectURL(url);
   });
 
   // after your current '#draw' logic runs and DOM updates:
@@ -1947,7 +1820,6 @@ function renderEventList(){
     tr.append(tdTime, tdPrize, tdSwap, tdOps);
     tbody.appendChild(tr);
   });
-  updateRosterSortIndicators();
 }
     function undoReroll(rrId){
   state.rerolls = state.rerolls || [];
@@ -2153,7 +2025,32 @@ function renderRosterList(){
       }
     };
 
+    const rosterSortSel = document.getElementById('rosterSort');
+if (rosterSortSel){
+  rosterSortSel.addEventListener('change', () => {
+    rosterView.sort = rosterSortSel.value;
+    rosterView.page = 1;
+    renderRoster();
+  });
+}
 
+const pageSizeInput = document.getElementById('pageSize2');
+if (pageSizeInput){
+  pageSizeInput.addEventListener('change', () => {
+    rosterView.pageSize = parseInt(pageSizeInput.value || '12', 10);
+    rosterView.page = 1;
+    renderRoster();
+  });
+}
+
+const searchBox = document.getElementById('search');
+if (searchBox){
+  searchBox.addEventListener('input', () => {
+    rosterView.q = searchBox.value || '';
+    rosterView.page = 1;
+    renderRoster();
+  });
+}
 
 
     tdStatus.appendChild(badge);
@@ -2192,7 +2089,6 @@ function renderRosterList(){
     tr.append(tdCode, tdName, tdDept, tdTable, tdSeat, tdStatus, tdOps);
     tbody.appendChild(tr);
   });
-  updateRosterSortIndicators();
 }
 
 
@@ -2263,7 +2159,6 @@ function renderRosterList(){
         saveAll(all);
         renderEventsTable();
         renderEventList();
-        cloudUpsertEventMeta(id);
       }
     };
 
@@ -2276,7 +2171,6 @@ function renderRosterList(){
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
-      cloudUpsertEventMeta(newId);
     };
 
     const deleteBtn = document.createElement('button');
@@ -2292,7 +2186,6 @@ function renderRosterList(){
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
-      cloudDeleteEvent(id);
     };
 
     tdOps.append(switchBtn, saveBtn, duplicateBtn, deleteBtn);
