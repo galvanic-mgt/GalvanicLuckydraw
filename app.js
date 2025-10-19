@@ -1270,6 +1270,11 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
       store.save(state);
       renderAll();
     }
+    if (!info || typeof info !== 'object' || info.error) {
+  console.warn('[Event info] bad response:', info);
+  return; // don't overwrite local with junk
+}
+
   } catch (e) {
     console.warn('Event info fetch failed:', e);
   }
@@ -1301,6 +1306,13 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   try {
     const eventId = store.current().id;
     const cloud = await FB.get(`/events/${eventId}/guests`) || {};
+    // guard: if Firebase returned an error or a non-object, don't merge
+if (!cloud || typeof cloud !== 'object' || cloud.error) {
+  console.warn('[Cloud guests] bad response:', cloud);
+  alert('無法讀取雲端名單（可能是權限或 eventId 錯誤）。請檢查 Firebase 讀取規則與目前活動 ID。');
+  return;
+}
+
     const mapKey = (x)=> `${(x.name||'').trim()}||${(x.dept||'').trim()}`;
     const localMap = new Map((state.people||[]).map(p=>[mapKey(p), p]));
 
