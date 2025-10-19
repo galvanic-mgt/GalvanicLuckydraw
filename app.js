@@ -343,8 +343,24 @@ if (bc) {
 
     if (d.type === 'TICK') {
       state = store.load();
+  /*__EVENT_INFO_FETCH__*/
+  ;(async()=>{
+    try {
+      const eid = (store.current()?.id || '').trim();
+      if (!eid) return;
+      const info = await FB.get(`/events/${eid}/info`);
+      if (info && typeof info === 'object') {
+        state.eventInfo = Object.assign({}, state.eventInfo || {}, info);
+        store.save(state);
+        renderAll();
+      }
+    } catch (e) {
+      // non-blocking
+    }
+  })();
+
       renderAll();
-  updateRosterSortIndicators();
+  try{ if (typeof updateRosterSortIndicators === 'function') updateRosterSortIndicators(); }catch{}
 
     } else if (d.type === 'CELEBRATE') {
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
@@ -1486,7 +1502,9 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
       parking: evParking.value||'',
       notes: evNotes.value||'',
     };
-    store.save(state); renderAll(); alert('已儲存活動資訊');
+    store.save(state); renderAll();
+    ;(()=>{ const eid = (store.current()?.id || '').trim(); if (!eid) return; FB.put(`/events/${eid}/info`, state.eventInfo).catch(()=>{}); })();
+    alert('已儲存活動資訊');
   });
 
   // assets
