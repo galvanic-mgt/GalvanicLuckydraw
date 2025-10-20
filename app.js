@@ -1634,6 +1634,19 @@ searchInput.addEventListener('input', ()=>{
 });
 
 // CMS 倒數抽獎：倒數 → 觸發現有 #draw → 對新卡片放彩帶（畫在 #confetti2）
+const countdownBtn = document.getElementById('countdownDraw');
+if (countdownBtn) countdownBtn.onclick = () => {
+  startCountdown('overlay2', 'count2', 3, () => {
+    document.getElementById('draw')?.click();
+    setTimeout(() => {
+      const grid  = document.getElementById('currentBatch2');
+      const cards = grid ? grid.querySelectorAll('.winner-card') : [];
+      const last  = cards[cards.length - 1];
+      if (last) blastConfettiAt(last, 'confetti2');
+    }, 60);
+  });
+};
+
 document.getElementById('countdownDraw')?.addEventListener('click', () => runCountdown('cms'));
 
 
