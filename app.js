@@ -33,6 +33,7 @@ function ensureInit(){
     saveAll(all);
   }
 }
+
 /* === Countdown + confetti utilities (works for Public/CMS/Tablet) === */
 function startCountdown(overlayId, countId, seconds = 3, onDone){
   const overlay = document.getElementById(overlayId);
@@ -1116,6 +1117,22 @@ if (publicConfettiEl && publicConfettiEl.parentElement !== document.body) {
   document.body.appendChild(publicConfettiEl);
 }
 
+// Ensure nothing sits on top of CMS and blocks pointer events
+function killBlockers(){
+  // Hide *all* overlays and any full-screen stage remnants
+  document.querySelectorAll('.overlay, .overlay.show, #publicView.fullscreen, #tabletView.fullscreen')
+    .forEach(el=>{
+      el.classList.remove('show');
+      el.classList.remove('fullscreen');
+      el.style.display = 'none';
+      el.style.pointerEvents = 'none';
+    });
+}
+// Run once at boot, then whenever CMS tab is activated
+killBlockers();
+document.getElementById('tabCMS')?.addEventListener('click', killBlockers);
+
+
 // Now initialize engines (after moving the node)
 // Public full-screen canvas stays viewport-sized
 confettiPublic = makeConfettiEngine($('confetti'));
@@ -1667,7 +1684,9 @@ if (tabletCountdownBtn) tabletCountdownBtn.onclick = ()=> runCountdown('tablet')
 
   
   // draw
-btnDraw.addEventListener('click', ()=>{
+btnDraw.addEventListener('click', (e)=>{
+  e.preventDefault();
+  e.stopPropagation();
   state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
   const n=Math.max(1, Number(batchCount.value)||1);
   n===1 ? drawOne() : drawBatch(n);
@@ -1713,7 +1732,8 @@ setTimeout(() => {
 }, 80);
 
 
-  $('clearStage').addEventListener('click', ()=>{
+  $('clearStage').addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
   // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
   state.currentBatch = [];
   state.lastConfirmed = null;
@@ -1730,7 +1750,8 @@ setTimeout(() => {
   } catch {}
 });
 
-  $('clearBatch')?.addEventListener('click', ()=>{
+  $('clearBatch')?.addEventListener('click', (e)=>{
+  e.preventDefault(); e.stopPropagation();
   state.currentBatch = [];
   state.lastConfirmed = null;
   state.lastPick = null;
