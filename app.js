@@ -33,85 +33,6 @@ function ensureInit(){
     saveAll(all);
   }
 }
-/* === Countdown + confetti utilities (works for Public/CMS/Tablet) === */
-function startCountdown(overlayId, countId, seconds = 3, onDone){
-  const overlay = document.getElementById(overlayId);
-  const countEl = document.getElementById(countId);
-  if(!overlay || !countEl){ onDone && onDone(); return; }
-
-  overlay.classList.add('show');
-  let n = seconds;
-  countEl.textContent = n;
-
-  const tick = () => {
-    n -= 1;
-    if(n > 0){ countEl.textContent = n; setTimeout(tick, 800); }
-    else {
-      overlay.classList.remove('show');
-      onDone && onDone();
-    }
-  };
-  setTimeout(tick, 800);
-}
-
-/* tiny confetti (no library): blasts from a DOM element into a <canvas> */
-function blastConfettiAt(el, canvasId){
-  const c = document.getElementById(canvasId);
-  if(!c || !el) return;
-
-  const ctx = c.getContext('2d');
-  // size canvas to viewport (fixed/absolute canvases in your HTML)
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  c.width  = c.clientWidth  * dpr;
-  c.height = c.clientHeight * dpr;
-  ctx.scale(dpr, dpr);
-
-  const rect = el.getBoundingClientRect();
-  const origin = { 
-    x: rect.left + rect.width/2, 
-    y: rect.top  + rect.height/2 
-  };
-
-  const particles = Array.from({length: 80}, () => ({
-    x: origin.x, y: origin.y,
-    vx: (Math.random()*2-1) * 8,
-    vy: (Math.random()*-1) * 10 - 4,
-    g:  0.35 + Math.random() * 0.2,
-    life: 50 + Math.random()*20,
-    size: 2 + Math.random()*3,
-    color: `hsl(${Math.floor(Math.random()*360)},90%,60%)`
-  }));
-
-  let raf;
-  const animate = () => {
-    ctx.clearRect(0, 0, c.clientWidth, c.clientHeight);
-    let alive = 0;
-    particles.forEach(p => {
-      if (p.life > 0){
-        alive++;
-        p.vy += p.g;
-        p.x  += p.vx;
-        p.y  += p.vy;
-        p.life -= 1;
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, p.size, p.size);
-      }
-    });
-    if(alive > 0) raf = requestAnimationFrame(animate);
-  };
-  cancelAnimationFrame(raf);
-  animate();
-}
-
-/* find the newest winner cards (the ones just drawn) */
-function latestWinnerCards(containerId){
-  const grid = document.getElementById(containerId);
-  if(!grid) return [];
-  // pick last N cards (heuristic: last row)
-  const all = Array.from(grid.querySelectorAll('.winner-card'));
-  return all.slice(-Math.min(all.length, 6));
-}
-
 
 // --- Event management helpers ---
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
@@ -135,130 +56,6 @@ function cloneCurrentEvent(newName){
   return newId;
 }
 
-// ===== Countdown + Confetti helpers =====
-const confettiEngines = new Map(); // canvasId -> engine
-
-function runCountdown(where){ // 'public' | 'cms' | 'tablet'
-  const overlayId = where === 'public' ? 'overlay' : where === 'cms' ? 'overlay2' : 'overlay3';
-  const countId   = where === 'public' ? 'count'   : where === 'cms' ? 'count2'   : 'count3';
-  const canvasId  = where === 'public' ? 'confetti': where === 'cms' ? 'confetti2': 'confetti3';
-
-  const overlay = document.getElementById(overlayId);
-  const countEl = document.getElementById(countId);
-  if(!overlay || !countEl) return;
-
-  let n = 3;
-  overlay.classList.add('show');
-  countEl.textContent = n;
-
-  const tick = setInterval(()=>{
-    n -= 1;
-    if(n > 0){
-      countEl.textContent = n;
-      countEl.classList.remove('pump'); // retrigger the little animation
-      void countEl.offsetWidth;
-      countEl.classList.add('pump');
-    } else {
-      clearInterval(tick);
-      overlay.classList.remove('show');
-    // Trigger the existing draw button so all logic stays centralized
-    document.getElementById('draw')?.click();
-
-    // After the UI renders the new winner cards, pop confetti at them
-    setTimeout(() => {
-      if (where === 'cms') {
-        const grid  = document.getElementById('currentBatch2');
-        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
-        const last  = cards[cards.length - 1];
-        if (last) blastConfettiAt(last, 'confetti2');
-      } else if (where === 'tablet') {
-        const grid  = document.getElementById('currentBatch3');
-        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
-        cards.forEach(card => blastConfettiAt(card, 'confetti3'));
-      } else {
-        // public (fallback)
-        const grid  = document.getElementById('currentBatch');
-        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
-        const last  = cards[cards.length - 1];
-        if (last) blastConfettiAt(last, 'confetti');
-      }
-    }, 80);
-    }
-  }, 1000);
-}
-
-function burstConfetti(canvasId){
-  // kill other confetti engines so we never get "extra" fireworks
-  for (const [id, eng] of confettiEngines.entries()){
-    if (id !== canvasId && eng && eng.reset) eng.reset();
-  }
-
-  const canvas = document.getElementById(canvasId);
-  if(!canvas) return;
-
-  // lightweight, canvas-only confetti (no external lib)
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width  = canvas.offsetWidth;
-  const H = canvas.height = canvas.offsetHeight;
-
-  const flakes = Array.from({length: 150}, ()=>({
-    x: Math.random()*W,
-    y: -10 - Math.random()*H*0.4,
-    r: 2 + Math.random()*4,
-    vx: -1 + Math.random()*2,
-    vy: 2 + Math.random()*3,
-    a: Math.random()*Math.PI*2
-  }));
-
-  let raf;
-  function step(){
-    ctx.clearRect(0,0,W,H);
-    flakes.forEach(f=>{
-      f.x += f.vx; f.y += f.vy; f.a += 0.05;
-      ctx.globalAlpha = 0.9;
-      ctx.fillStyle = `hsl(${(f.y/3)%360}, 90%, 60%)`;
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r*(0.7+0.3*Math.sin(f.a)), 0, Math.PI*2);
-      ctx.fill();
-    });
-    raf = requestAnimationFrame(step);
-  }
-  step();
-
-  // auto stop after 2.5s
-  const stop = ()=>{
-    cancelAnimationFrame(raf);
-    ctx.clearRect(0,0,W,H);
-  };
-  setTimeout(stop, 2500);
-
-  confettiEngines.set(canvasId, { reset: stop });
-}
-
-// ===== Local users (super-simple, localStorage) =====
-const USERS_KEY = 'ldraw-users-v1';
-
-function loadUsers(){
-  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
-  catch { return []; }
-}
-function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
-
-// Ensure a default admin admin/admin exists so you can get in
-function ensureDefaultAdmin(){
-  const list = loadUsers();
-  if (!list.some(u => u.user === 'admin')) {
-    list.push({ user:'admin', pass:'admin', role:'admin', events:'*' });
-    saveUsers(list);
-  }
-}
-
-// Return the matched account or null
-function authUser(user, pass){
-  const list = loadUsers();
-  return list.find(u => u.user === user && u.pass === pass) || null;
-}
-
 // ===== Firebase (REST) tiny wrapper =====
 const FB = {
   base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← same URL as vote.js
@@ -280,19 +77,19 @@ function fireAtElement(el, engine, count=180) {
   let x = r.left + r.width / 2;
   let y = r.top  + r.height / 2;
 
-  // If the engine is viewport-based (no host), pass window coords
-  if (!engine.hostEl) {
-    x += scrollX;
-    y += scrollY;
-  } else {
-    // Translate to the engine's host local coords
-    const sr = engine.hostEl.getBoundingClientRect();
-    x -= sr.left;
-    y -= sr.top;
+  if (engine === confettiPublic) {
+    x += scrollX; 
+    y += scrollY;     // viewport-sized
+  } else if (engine === confettiStage) {
+    const stageEl = document.querySelector('#pageStage .stage'); // use stage as origin
+    if (stageEl) {
+      const sr = stageEl.getBoundingClientRect();
+      x -= sr.left;
+      y -= sr.top;    // element-sized canvas local coords
+    }
   }
   engine.fire(x, y, count);
 }
-
 
 
 // Convenience: fire on all winner cards in a container
@@ -396,28 +193,16 @@ if (bc) {
 
 
     } else if (d.type === 'REROLL_BURST') {
-      // Public
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
-      const idx = d.at || 0;
-      const cards = document.querySelectorAll('#currentBatch .winner-card');
-        if (cards[idx]) fireAtElement(cards[idx], confettiPublic, 140);
-      }
-      // Tablet
-      if (document.body.classList.contains('tablet-mode')) {
         const idx = d.at || 0;
-        const cards = document.querySelectorAll('#currentBatch3 .winner-card');
-        if (cards[idx]) fireAtElement(cards[idx], confettiTablet, 140);
+        const cards = document.querySelectorAll('#currentBatch .winner-card');
+        if (cards[idx]) fireAtElement(cards[idx], confettiPublic, 140);
       }
 
     } else if (d.type === 'DRAW_BURST') {
-      // Public
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
         setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 10);
       }
-      // Tablet
-      if (document.body.classList.contains('tablet-mode')) {
-        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch3'), confettiTablet); }, 10);
-  }
 
       } else if (d.type === 'SHOW_POLL_RESULT') {
   // Only the Public screen should respond
@@ -554,8 +339,6 @@ function makeConfettiEngine(canvas, hostEl=null){
       // Ensure it fills the stage box
       canvas.style.position = 'absolute';
       canvas.style.inset = '0';
-      canvas.style.pointerEvents = 'none';
-      canvas.style.zIndex = '5';
     } else {
       canvas.width  = innerWidth;
       canvas.height = innerHeight;
@@ -609,12 +392,11 @@ function makeConfettiEngine(canvas, hostEl=null){
   }
   requestAnimationFrame(tick);
 
-  return { fire, resize, hostEl };
+  return { fire, resize };
 }
 
 let confettiPublic = null;
 let confettiStage  = null;
-let confettiTablet = null;
 
 // Fix the typo and unify celebration:
 function celebrateAt(rectLike=null){
@@ -637,14 +419,11 @@ function fireConfetti(){
 
 // --- State & DOM refs ---
 let state;
-let publicView, cmsView, tabletView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
-
+let publicView, cmsView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
 let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
 let publicPrize2, batchGrid2, winnersChips2, bgEl2, logoEl2, bannerEl2, confetti2, ctx2, confettiParticles2=[];
-// Tablet stage refs (mirror of public & embedded)
-let publicPrize3, batchGrid3, winnersChips3, bgEl3, bannerEl3, logoEl3;
 
 let eventList, newEventName, newClientName, addEventBtn;
 let evTitle, evClient, evDateTime, evVenue, evAddress, evMapUrl, evBus, evTrain, evParking, evNotes;
@@ -675,9 +454,9 @@ let landingURL, copyURL, openLanding, qrBox, downloadQR, landingLink, openFullSt
 function currentPrize(){ return state.prizes.find(p=>p.id===state.currentPrizeId)||null; }
 function prizeLeft(p){ return Math.max(0,(p?.quota||0)-(p?.won?.length||0)); }
 
-function renderBG(){ [bgEl,bgEl2,bgEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
-function renderLogo(){ [logoEl,logoEl2,logoEl3].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
-function renderBanner(){ [bannerEl,bannerEl2,bannerEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
+function renderBG(){ [bgEl,bgEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
+function renderLogo(){ [logoEl,logoEl2].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
+function renderBanner(){ [bannerEl,bannerEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
 
 function renderBatchTargets(targetGrid){
   targetGrid.innerHTML='';
@@ -693,59 +472,43 @@ function renderBatchTargets(targetGrid){
   });
 }
 function updatePublicPanel(){
-  const p = currentPrize();
+  const p=currentPrize();
+  [publicPrizeEl, publicPrize2].forEach(el=>{
+  if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
+});
+const remainText  = `剩餘：${state.remaining.length}`;
+const winnersText = `已得獎：${state.winners.length}`;
 
-  // Title (now for 3 stages: embedded/public/tablet)
-  [publicPrizeEl, publicPrize2, publicPrize3].forEach(el=>{
-    if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
-  });
+[document.getElementById('statsRemain'),
+ document.getElementById('statsRemain2')].forEach(el => { if (el) el.textContent = remainText; });
 
-  // Global stats
-  const remainText  = `剩餘：${state.remaining.length}`;
-  const winnersText = `已得獎：${state.winners.length}`;
+[document.getElementById('statsWinners'),
+ document.getElementById('statsWinners2')].forEach(el => { if (el) el.textContent = winnersText; });
 
-  [document.getElementById('statsRemain'),
-   document.getElementById('statsRemain2'),
-   document.getElementById('statsRemain3')
-  ].forEach(el => { if (el) el.textContent = remainText; });
+const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
+// Update both the new inline badges and (if you keep it) the old bottom stat
+[document.getElementById('prizeLeftInline'),
+ document.getElementById('prizeLeftInline2'),
+ statsPrizeLeft].forEach(el => { if (el) el.textContent = leftText; });
 
-  [document.getElementById('statsWinners'),
-   document.getElementById('statsWinners2'),
-   document.getElementById('statsWinners3')
-  ].forEach(el => { if (el) el.textContent = winnersText; });
+  const html = p? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
+  // no bottom chips needed
+if(winnersChips) winnersChips.innerHTML = '';
+if(winnersChips2) winnersChips2.innerHTML = '';
 
-  // Prize-left inline badges (and keep your old bottom stat if present)
-  const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
-  [document.getElementById('prizeLeftInline'),
-   document.getElementById('prizeLeftInline2'),
-   document.getElementById('prizeLeftInline3'),
-   // keep your old bottom stat if the var exists
-   (typeof statsPrizeLeft !== 'undefined' ? statsPrizeLeft : null)
-  ].forEach(el => { if (el) el.textContent = leftText; });
-
-  // (You were computing html, but clearing chips — preserve that behavior and include tablet)
-  const html = p ? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
-  if (winnersChips)  winnersChips.innerHTML  = '';
-  if (winnersChips2) winnersChips2.innerHTML = '';
-  if (typeof winnersChips3 !== 'undefined' && winnersChips3) winnersChips3.innerHTML = '';
-
-  // Visuals
   renderBanner();
+  if(batchGrid) renderBatchTargets(batchGrid);
+  if(batchGrid2) renderBatchTargets(batchGrid2);
 
-  // Batch target grids (support all three)
-  if (batchGrid)  renderBatchTargets(batchGrid);
-  if (batchGrid2) renderBatchTargets(batchGrid2);
-  if (typeof batchGrid3 !== 'undefined' && batchGrid3) renderBatchTargets(batchGrid3);
-
-  // Show/refresh current poll’s QR on the public stage
+    // show/refresh the current poll’s QR on the public stage
   renderActivePollQR();
 
   // Center Public view on the poll QR when requested
-  document.body.classList.toggle('poll-only',
-    !!(document.body.classList.contains('public-mode') && state.showPollOnly)
-  );
-}
+document.body.classList.toggle('poll-only',
+  !!(document.body.classList.contains('public-mode') && state.showPollOnly)
+);
 
+}
 
 // roster
 function filterBySearch(list){ const q=(searchInput?.value||'').trim().toLowerCase(); if(!q) return list; return list.filter(p=> (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q)); }
@@ -1118,11 +881,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   batchGrid=$('currentBatch'); winnersChips=$('winnersChips');
   bgEl=$('bgEl'); logoEl=$('logoEl'); bannerEl=$('banner');
 
-  publicPrize3  = document.getElementById('publicPrize3');
-  batchGrid3    = document.getElementById('currentBatch3');
-  winnersChips3 = document.getElementById('winnersChips3');
-
-
   // Embedded stage refs
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
@@ -1142,10 +900,6 @@ confettiPublic = makeConfettiEngine($('confetti'));
 const embeddedStageEl = document.querySelector('#pageStage .stage');
 confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 
-// Tablet embedded
-const tabletStageEl = document.querySelector('#tabletView .stage');
-confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
-
 
   // sidebar + events
   eventList=$('eventList'); newEventName=$('newEventName'); newClientName=$('newClientName'); addEventBtn=$('addEvent');
@@ -1156,15 +910,6 @@ confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the G
   csvInput=$('csv'); btnPreset=$('preset'); btnExportCheckin=$('exportCheckin'); btnExportSession=$('exportSession'); importSessionInput=$('importSession');
   pageSelect=$('pageSelect'); searchInput=$('search'); pageSize2=$('pageSize2');
   const addName = $('addName'), addDept = $('addDept'), addPresent = $('addPresent'), addPersonBtn = $('addPerson');
-
-  // Tablet stage refs
-  publicPrize3 = $('publicPrize3');
-  batchGrid3   = $('currentBatch3');
-  winnersChips3= $('winnersChips3');
-  bgEl3        = $('bgEl3');
-  logoEl3      = $('logoEl3');
-  bannerEl3    = $('banner3');
-
 
   addPersonBtn.addEventListener('click', ()=>{
   const name = (addName.value||'').trim();
@@ -1272,185 +1017,29 @@ emClone.addEventListener('click', ()=>{
 
 emSearch.addEventListener('input', renderEventsTable);
 
-// ===== LOGIN (local only) =====
-(function initLocalLogin(){
-  const USERS_KEY = 'ldraw-users-v1';       // local storage key for users
-  const AUTH_KEY  = 'ldraw-auth-v1';        // who is logged in
 
-  // helpers
-  const getUsers = () => {
-    try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
-    catch { return []; }
-  };
-  const saveUsers = (arr) => localStorage.setItem(USERS_KEY, JSON.stringify(arr));
-  const setAuth  = (u)   => localStorage.setItem(AUTH_KEY, JSON.stringify(u || null));
-  const getAuth  = () => {
-    try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; }
-  };
+  // top tabs
+  tabPublic.addEventListener('click', ()=>{ tabPublic.classList.add('active'); tabCMS.classList.remove('active','primary'); cmsView.style.display='none'; publicView.style.display='block'; document.body.classList.add('public-mode'); });
+  tabCMS.addEventListener('click', ()=>{ tabCMS.classList.add('active','primary'); tabPublic.classList.remove('active'); publicView.style.display='none'; cmsView.style.display='block'; document.body.classList.remove('public-mode'); });
 
-  // ensure a default admin/admin if none
-  (function ensureDefaultAdmin(){
-    let users = getUsers();
-    if (!Array.isArray(users) || users.length === 0 || !users.some(u => u.username === 'admin')) {
-      users = users.filter(Boolean);
-      users.push({ username:'admin', password:'admin', role:'admin', events:[] });
-      saveUsers(users);
-    }
-  })();
+  const tabTablet = $('tabTablet');
+const tabletView = $('tabletView');
 
-  // DOM
-  const gate   = document.getElementById('loginGate');
-  const form   = document.getElementById('loginForm');
-  const uEl    = document.getElementById('loginUser');
-  const pEl    = document.getElementById('loginPass');
-  const btn    = document.getElementById('btnLogin');
-
-  // guard: if any of these are missing, do nothing (won't break the app)
-  if (!gate || !form || !uEl || !pEl || !btn) return;
-
-  function applyRoleUI(role){
-    // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
-    const navItems = document.querySelectorAll('#cmsNav .nav-item');
-    navItems.forEach(item => {
-      const target = item.getAttribute('data-target');
-      if (role === 'client') {
-        const visible = (target === 'pageRoster');  // only 名單
-        item.style.display = visible ? '' : 'none';
-        if (!visible) {
-          // also hide the subpage section if currently visible
-          const sec = document.getElementById(target);
-          if (sec) sec.style.display = 'none';
-        }
-      } else {
-        // admin: show all
-        item.style.display = '';
-      }
-    });
-
-    // If client is logged in, switch to CMS view and force 名單 tab active
-    if (role === 'client') {
-      // show CMS main container
-      document.getElementById('cmsView')?.setAttribute('style','');
-      // activate the 名單 tab
-      const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
-      if (rosterBtn) {
-        // deactivate others
-        document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
-        rosterBtn.classList.add('active');
-        // show roster page
-        document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
-        document.getElementById('pageRoster').style.display = 'block';
-      }
-    }
-  }
-
-  function login(username, password){
-    const users = getUsers();
-    const u = users.find(x => x && x.username === username && x.password === password);
-    if (!u) return false;
-    setAuth({ username:u.username, role:u.role, events:u.events || [] });
-    applyRoleUI(u.role || 'admin');
-    // hide overlay
-    gate.classList.remove('show');
-    gate.style.display = 'none';
-    // optional: re-render anything that depends on role
-    if (typeof renderAll === 'function') renderAll();
-    return true;
-  }
-
-  // auto-restore session
-  (function restoreSession(){
-    const me = getAuth();
-    if (me && me.username) {
-      applyRoleUI(me.role || 'admin');
-      gate.classList.remove('show');
-      gate.style.display = 'none';
-      return;
-    }
-    // show gate
-    gate.classList.add('show');
-    gate.style.display = 'flex';
-  })();
-
-  // handle submit (click or Enter)
-  form.addEventListener('submit', (e)=>{
-    e.preventDefault();
-    const ok = login((uEl.value||'').trim(), (pEl.value||'').trim());
-    if (!ok) {
-      btn.disabled = false; // ensure it remains clickable
-      // quick inline feedback without alert()
-      btn.textContent = '登入失敗，重試';
-      setTimeout(()=> btn.textContent = '登入', 1200);
-    }
+if (tabTablet) {
+  tabTablet.addEventListener('click', ()=>{
+    // 類似公眾頁：不讓用戶看到 CMS
+    document.body.classList.add('tablet-mode');
+    // 顯示平板頁、隱藏其它
+    tabletView.style.display = 'block';
+    cmsView.style.display = 'none';
+    publicView.style.display = 'none';
   });
-})();
-
-});
-
-// ---- Top tabs + routing (CMS / Public / Tablet)
-const tabTablet  = $('tabTablet');
-cmsView    = $('cmsView');
-publicView = $('publicView');
-tabletView = $('tabletView');
-
-function showCMS(){
-  document.body.classList.remove('tablet-mode','public-mode');
-  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-  cmsView.style.display = 'block';
-  publicView.style.display = 'none';
-  tabletView.style.display = 'none';
-  location.hash = '#cms';
-  // kick layout so CSS safety applies immediately
-  window.dispatchEvent(new Event('resize'));
 }
 
-function showPublic(){
-  document.body.classList.add('public-mode');
-  document.body.classList.remove('tablet-mode');
-  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-  cmsView.style.display = 'none';
-  publicView.style.display = 'block';
-  tabletView.style.display = 'none';
-  location.hash = '#public';
-  window.dispatchEvent(new Event('resize'));
+// 支援 URL 直接進入：index.html#tablet
+if (location.hash === '#tablet') {
+  $('tabTablet')?.click();
 }
-
-function showTablet(){
-  document.body.classList.add('tablet-mode');
-  document.body.classList.remove('public-mode');
-  cmsView.style.display = 'none';
-  publicView.style.display = 'none';
-  tabletView.style.display = 'flex';
-  location.hash = '#tablet';
-  // no auto-fullscreen here
-  window.dispatchEvent(new Event('resize'));
-}
-
-tabCMS?.addEventListener('click', showCMS);
-tabPublic?.addEventListener('click', showPublic);
-tabTablet?.addEventListener('click', showTablet);
-
-// Initial route (default to CMS to avoid accidental overlay)
-if (location.hash === '#tablet')      showTablet();
-else if (location.hash === '#public') showPublic();
-else                                  showCMS();
-
-window.addEventListener('hashchange', ()=>{
-  if (location.hash === '#tablet')      showTablet();
-  else if (location.hash === '#public') showPublic();
-  else                                  showCMS();
-});
-
-
-// Tablet: manual fullscreen button
-$('tabletFullscreen')?.addEventListener('click', ()=>{
-  const d = document.documentElement;
-  if (!document.fullscreenElement && d.requestFullscreen) {
-    d.requestFullscreen().catch(()=>{});
-  } else if (document.exitFullscreen) {
-    document.exitFullscreen().catch(()=>{});
-  }
-});
 
 // 綁定平板上的按鈕
 const tabletBatch = $('tabletBatch');
@@ -1559,112 +1148,14 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
     a.href=url; a.download='lucky-draw-session.json'; a.click(); URL.revokeObjectURL(url);
   });
-// ---- CSV helpers (place once) ----
-function exportCSV(rows, filename){
-  const csv = rows.map(r => r.map(v => {
-    const s = (v == null ? '' : String(v)).replace(/"/g,'""');
-    return `"${s}"`;
-  }).join(',')).join('\r\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-function exportWinnersCSV(){
-  const peopleIndex = new Map((state.people||[]).map(p => [ `${p.name}||${p.dept||''}`, p ]));
-  const rows = [
-    ['姓名','部門','桌號','座位','獎項','中獎時間','備註/碼']
-  ];
-  (state.winners || []).forEach(w => {
-    const key = `${w.name}||${w.dept||''}`;
-    const p = peopleIndex.get(key) || {};
-    rows.push([
-      w.name || '',
-      w.dept || '',
-      p.table || '',
-      p.seat  || '',
-      w.prizeName || w.prize || '',
-      w.time ? new Date(w.time).toLocaleString() : '',
-      p.code || ''
-    ]);
-  });
-  exportCSV(rows, 'winners_full.csv');
-}
-
-// ---- bind once, without declaring a duplicate const ----
-(function bindExportWinners(){
-  const el = document.getElementById('exportWinners');
-  if (!el) return;
-  // ensure we don't double-bind if this runs again
-  if (el.dataset.bound === '1') return;
-  el.dataset.bound = '1';
-  el.addEventListener('click', exportWinnersCSV);
-})();
-
-
   importSessionInput.addEventListener('change', e=>{
     const f=e.target.files?.[0]; if(!f) return;
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
   });
-
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
-  pageSelect.addEventListener('change', ()=>{
-  state.currentPage = Number(pageSelect.value) || 1;
-  store.save(state);
-  renderRosterList();
-  renderTiles(); // keep tiles in sync if you use them elsewhere
-});
-
-pageSize2.addEventListener('input', (e)=>{
-  state.pageSize = Math.max(5, Math.min(100, Number(e.target.value) || 12));
-  store.save(state);
-  // when page size changes, reset to first page to avoid empty pages
-  state.currentPage = 1;
-  renderRosterList();
-  renderTiles();
-});
-
-searchInput.addEventListener('input', ()=>{
-  state.currentPage = 1;
-  renderRosterList();
-  renderTiles();
-});
-
-// CMS 倒數抽獎：倒數 → 觸發現有 #draw → 對新卡片放彩帶（畫在 #confetti2）
-const countdownBtn = document.getElementById('countdownDraw');
-if (countdownBtn) countdownBtn.onclick = () => {
-  startCountdown('overlay2', 'count2', 3, () => {
-    document.getElementById('draw')?.click();
-    setTimeout(() => {
-      const grid  = document.getElementById('currentBatch2');
-      const cards = grid ? grid.querySelectorAll('.winner-card') : [];
-      const last  = cards[cards.length - 1];
-      if (last) blastConfettiAt(last, 'confetti2');
-    }, 60);
-  });
-};
-
-document.getElementById('countdownDraw')?.addEventListener('click', () => runCountdown('cms'));
-
-
-// 平板：大「倒數抽獎」按鈕
-const tabletBtn = document.getElementById('tabletCountdown');
-if (tabletBtn){
-  tabletBtn.onclick = () => {
-    startCountdown('overlay3', 'count3', 3, () => {
-      // use the existing CMS draw logic (keeps single source of truth)
-      document.getElementById('draw').click();
-
-      // confetti on the tablet grid
-      setTimeout(() => {
-        latestWinnerCards('currentBatch3').forEach(card => blastConfettiAt(card, 'confetti3'));
-      }, 80);
-    });
-  };
-}
+  pageSelect.addEventListener('change', ()=>{ state.currentPage=Number(pageSelect.value)||1; store.save(state); renderTiles(); });
+  pageSize2.addEventListener('input', e=>{ state.pageSize=Math.min(20, Math.max(5, Number(e.target.value)||12)); store.save(state); renderTiles(); });
+  searchInput.addEventListener('input', renderTiles);
 
   // prizes
   $('addPrize').addEventListener('click', ()=>{
@@ -1682,7 +1173,6 @@ if (tabletBtn){
     store.save(state); renderAll(); alert(`已匯入 ${items.length} 項獎品`);
   });
 
-  
   // draw
 btnDraw.addEventListener('click', ()=>{
   state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
@@ -1699,8 +1189,6 @@ btnCountdown.addEventListener('click', async ()=>{
     state.remaining=state.remaining.filter(x=>!(x.name===currentPick.name && x.dept===currentPick.dept));
     addWinnerRecords(prize,currentPick); state.lastConfirmed=currentPick; state.lastPick={prizeId:prize.id,people:[currentPick]}; state.currentBatch=[currentPick];
     currentPick=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
-
-
 
 // CMS: burst on the actual winner card(s)
 fireOnCards(document.getElementById('currentBatch2'), confettiStage);
@@ -1724,41 +1212,15 @@ try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
     a.href=url; a.download='winners.csv'; a.click(); URL.revokeObjectURL(url);
   });
 
-  // after your current '#draw' logic runs and DOM updates:
-setTimeout(() => {
-  latestWinnerCards('currentBatch2').forEach(card => blastConfettiAt(card, 'confetti2'));
-}, 80);
-
-
   $('clearStage').addEventListener('click', ()=>{
   // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
   state.currentBatch = [];
-  state.lastConfirmed = null;
-  state.lastPick = null;                 // ← 關鍵：不要保留上一輪狀態
-  state.showPollOnly = false;            // ← 關鍵：退出「投票 QR only」模式
+  state.lastConfirmed = null;      // 可選：一併清掉最後確認
   store.save(state);
-  updatePublicPanel();                   // 立即刷新舞台
   renderAll();
 
-  // 告知其他視窗（如公眾頁）切回抽獎畫面並刷新
-  try { 
-    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
-    bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() });
-  } catch {}
-});
-
-  $('clearBatch')?.addEventListener('click', ()=>{
-  state.currentBatch = [];
-  state.lastConfirmed = null;
-  state.lastPick = null;
-  state.showPollOnly = false;
-  store.save(state);
-  updatePublicPanel();
-  renderAll();
-  try {
-    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
-    bc && bc.postMessage({ type:'TICK', reason:'clearBatch', ts: Date.now() });
-  } catch {}
+  // 告知其他視窗（如公眾頁）立即刷新
+  try { bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() }); } catch {}
 });
 
   // storage
@@ -1777,7 +1239,7 @@ setTimeout(() => {
   $('fullscreen').addEventListener('click', ()=>{ const d=document.documentElement; d.requestFullscreen && d.requestFullscreen(); });
 
   renderAll();
-
+});
 
 function renderEventList(){
   eventList.innerHTML='';
@@ -1887,61 +1349,16 @@ function renderRosterList(){
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  // --- search filter (unchanged) ---
   const q = (searchInput?.value || '').trim().toLowerCase();
-  let list = (state.people || []).filter(p =>
+  const filtered = (state.people || []).filter(p =>
     (!q) ||
     (p.name||'').toLowerCase().includes(q) ||
     (p.dept||'').toLowerCase().includes(q)
   );
 
-  // --- FULL-LIST SORT (NEW) ---
-  // You can set state.rosterSortBy to one of: 'name' | 'dept' | 'table' | 'seat' | 'code'
-  // and state.rosterSortDir to 'asc' | 'desc' elsewhere in your UI if needed.
-  const sortBy  = state.rosterSortBy  || 'name';
-  const sortDir = state.rosterSortDir || 'asc';
-  const dir = sortDir === 'desc' ? -1 : 1;
-
-  const getVal = (p) => {
-    if (sortBy === 'table') return (p.table ?? '');
-    if (sortBy === 'seat')  return (p.seat  ?? '');
-    if (sortBy === 'dept')  return (p.dept  ?? '');
-    if (sortBy === 'code')  return (p.code  ?? '');
-    return (p.name ?? ''); // default
-  };
-  list = list.slice().sort((a,b)=>{
-    const av = getVal(a);
-    const bv = getVal(b);
-    // numeric compare if both are numbers, else string compare (case-insensitive)
-    const aNum = typeof av === 'number' || (/^\d+$/).test(String(av));
-    const bNum = typeof bv === 'number' || (/^\d+$/).test(String(bv));
-    if (aNum && bNum){
-      const na = Number(av), nb = Number(bv);
-      if (na < nb) return -1*dir;
-      if (na > nb) return  1*dir;
-      return 0;
-    }
-    const sa = String(av).toLowerCase();
-    const sb = String(bv).toLowerCase();
-    if (sa < sb) return -1*dir;
-    if (sa > sb) return  1*dir;
-    return 0;
-  });
-
   const eventId = store.current().id;
 
-  // --- PAGINATION after sorting (NEW) ---
-  const pageSize = Math.max(5, Math.min(100, Number(state.pageSize) || 12));
-  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
-  if (!state.currentPage || state.currentPage > totalPages) {
-    state.currentPage = 1;
-    store.save(state);
-  }
-  const start = (state.currentPage - 1) * pageSize;
-  const page = list.slice(start, start + pageSize);
-
-  // --- RENDER current page (keeps your original row building & cloud sync) ---
-  page.forEach((p)=>{
+  filtered.forEach((p)=>{
     const tr = document.createElement('tr');
 
     // --- code
@@ -1952,6 +1369,7 @@ function renderRosterList(){
     codeIn.onchange = ()=>{
       p.code = (codeIn.value || '').trim();
       store.save(state);
+      // also mirror code change to cloud record if we already have one
       if (p.code) {
         FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
           name: p.name || '',
@@ -2034,6 +1452,7 @@ function renderRosterList(){
       store.save(state);
       renderRosterList();
       updatePublicPanel();
+      // mirror to cloud eligibility
       if (p.code) {
         FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
           arrived: !!p.checkedIn,
@@ -2041,34 +1460,6 @@ function renderRosterList(){
         }).catch(()=>{});
       }
     };
-
-    const rosterSortSel = document.getElementById('rosterSort');
-if (rosterSortSel){
-  rosterSortSel.addEventListener('change', () => {
-    rosterView.sort = rosterSortSel.value;
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
-
-const pageSizeInput = document.getElementById('pageSize2');
-if (pageSizeInput){
-  pageSizeInput.addEventListener('change', () => {
-    rosterView.pageSize = parseInt(pageSizeInput.value || '12', 10);
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
-
-const searchBox = document.getElementById('search');
-if (searchBox){
-  searchBox.addEventListener('input', () => {
-    rosterView.q = searchBox.value || '';
-    rosterView.page = 1;
-    renderRoster();
-  });
-}
-
 
     tdStatus.appendChild(badge);
 
@@ -2098,6 +1489,7 @@ if (searchBox){
       store.save(state);
       renderRosterList();
       updatePublicPanel();
+      // (optional) if you want to also remove cloud record when code exists:
       // if (p.code) FB.put(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, null).catch(()=>{});
     };
 
@@ -2107,6 +1499,7 @@ if (searchBox){
     tbody.appendChild(tr);
   });
 }
+
 
 
     function renderEventsTable(){
@@ -2473,7 +1866,6 @@ if (publishNow) publishNow.onclick = async ()=>{
   // initial paint
   drawList(); drawEditor(); drawQR();
 }
-
 
 
 // clone another event by id

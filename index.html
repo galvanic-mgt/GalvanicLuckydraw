@@ -8,24 +8,6 @@
   <link rel="icon" href="data:,">
 </head>
 <body>
-              <!-- LOGIN OVERLAY (local-only) -->
-          <div id="loginGate" class="overlay" style="display:none">
-            <form id="loginForm" class="card" style="min-width:320px; background:#121a2b; padding:16px">
-              <h3 style="margin-top:0">登入</h3>
-              <label style="display:block; margin:8px 0">
-                帳號
-                <input id="loginUser" placeholder="admin" />
-              </label>
-              <label style="display:block; margin:8px 0">
-                密碼
-                <input id="loginPass" type="password" placeholder="admin" />
-              </label>
-              <div class="bar" style="margin-top:12px">
-                <button id="btnLogin" class="btn primary" type="submit">登入</button>
-              </div>
-            </form>
-          </div>
-
   <header>
     <div class="container row">
       <div class="tabs">
@@ -75,45 +57,17 @@
     <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
   </main>
 
- <main id="tabletView" style="display:none">
-  <section class="card stage">
-    <!-- Top-right fullscreen button (manual) -->
-    <button id="tabletFullscreen" class="btn tablet-fs-btn" type="button" title="全屏">⛶ 全屏</button>
-
-    <img id="logoEl3" class="logo" alt="logo" />
-    <div id="bgEl3" class="bg"></div>
-    <canvas id="confetti3"></canvas>
-
-    <div class="stage-inner">
-      <div id="banner3" class="banner"></div>
-
-      <div class="row prize-header">
-        <div class="prize-title" id="publicPrize3">—</div>
-        <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
-      </div>
-
-      <!-- NEW: a huge countdown-draw button centered above the grid -->
-      <button id="tabletCountdown" class="big-cta" type="button">⏱️ 倒數抽獎</button>
-
-      <div id="currentBatch3" class="batch-grid"></div>
-      <div class="winners-list" id="winnersChips3"></div>
-
-      <!-- 控制列：把「批量」留在底部 -->
-      <div class="bar" style="justify-content:center;margin-top:12px">
-        <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
-      </div>
-
-      <div class="bar" style="justify-content:center;margin-top:12px">
-        <span class="stat" id="statsRemain3">剩餘：0</span>
-        <span class="stat" id="statsWinners3">已得獎：0</span>
-      </div>
+  <main class="container" id="tabletView" style="display:none">
+  <section class="card" style="padding:14px">
+    <h3 style="margin-top:0">平板控制</h3>
+    <div class="bar" style="margin-bottom:8px">
+      <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
+      <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
+      <button id="tabletDraw" class="btn" type="button">🎲 Draw Now</button>
     </div>
-    <!-- NEW: tablet countdown overlay -->
-    <div class="overlay" id="overlay3"><div class="count" id="count3">3</div></div>
+    <p class="pill">此頁僅提供抽獎控制；結果會在「公開顯示」的大屏舞台出現。</p>
   </section>
 </main>
-
-
 
   <!-- CMS view -->
   <main class="container" id="cmsView">
@@ -140,7 +94,6 @@
           <button class="nav-item" data-target="pagePoll">投票</button>
           <button class="nav-item" data-target="pageStorage">儲存 / 備份</button>
           <button class="nav-item" data-target="pageEventsManage">活動管理</button>
-          <button class="nav-item" data-target="pageUsers">用戶管理</button>
         </nav>
       </aside>
 
@@ -174,35 +127,6 @@
             <button id="saveEventInfo" class="btn primary" type="button">💾 儲存活動資訊</button>
           </div>
         </section>
-        
-        <section class="card subpage" id="pageUsers" style="display:none">
-          <h3>用戶管理（本機）</h3>
-          <div class="grid-2" style="margin-bottom:10px">
-            <div class="card" style="padding:12px">
-              <h4 style="margin:0 0 8px">新增用戶</h4>
-              <label>帳號 <input id="uNewUser" /></label>
-              <label>密碼 <input id="uNewPass" type="password" /></label>
-              <label>角色
-                <select id="uNewRole">
-                  <option value="client">客戶（僅名單）</option>
-                  <option value="admin">超級管理員</option>
-                </select>
-              </label>
-              <label id="uEventPickWrap">可存取活動 ID（逗號分隔） <input id="uEventPick" placeholder="例如：emgf1248, abcd..." /></label>
-              <div class="bar" style="margin-top:8px">
-                <button id="uCreate" class="btn primary" type="button">+ 建立</button>
-              </div>
-            </div>
-            <div class="card" style="padding:12px">
-              <h4 style="margin:0 0 8px">所有用戶</h4>
-              <table class="table">
-                <thead><tr><th>帳號</th><th>角色</th><th>活動可存取</th><th>操作</th></tr></thead>
-                <tbody id="uTable"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
 
         <!-- 名單 -->
         <section class="card subpage" id="pageRoster" style="display:none">
@@ -216,20 +140,7 @@
           </div>
           <div class="bar">
             <input id="search" type="text" placeholder="搜尋姓名/部門" />
-            <label class="stat">排序
-              <select id="rosterSort">
-                <option value="name-asc">姓名 ↑</option>
-                <option value="name-desc">姓名 ↓</option>
-                <option value="dept-asc">部門 ↑</option>
-                <option value="dept-desc">部門 ↓</option>
-                <option value="table-asc">桌號 ↑</option>
-                <option value="table-desc">桌號 ↓</option>
-                <option value="seat-asc">座位 ↑</option>
-                <option value="seat-desc">座位 ↓</option>
-              </select>
-            </label>
-            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="100" value="12" /></label>
-
+            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="20" value="12" /></label>
             <button id="newPage" class="btn" type="button">+ 加新抽獎頁</button>
             <select id="pageSelect"></select>
           </div>
@@ -249,7 +160,6 @@
             <th style="min-width:120px">桌</th>
             <th style="min-width:120px">座</th>
             <th style="min-width:120px">狀態</th>
-            <th style="min-width:200px">已抽中</th>
             <th style="min-width:200px">操作</th>
           </tr>
         </thead>
@@ -288,7 +198,7 @@
             <button id="confirm" class="btn success" type="button" disabled>✅ 上台確認</button>
             <button id="undo" class="btn" type="button" disabled>↩️ Undo</button>
             <button id="clearStage" class="btn" type="button">🧹 清空舞台名單</button>
-            <button id="exportWinners" class="btn" type="button">匯出中獎名單（含桌位/獎品</button>
+            <button id="exportWinners" class="btn" type="button">匯出得獎 CSV</button>
             <button id="clearBatch" class="btn warning" type="button">🧹 清空舞台名稱</button>
                   <a id="openTablet" class="btn" href="#tablet">平板控制 ↗</a>
             <a id="openFullStage" class="btn" href="#" target="_blank">在新視窗開啟全屏舞台 ↗</a>
@@ -458,13 +368,9 @@
   <!-- Optional XLSX reader (only needed if你要直接讀 .xlsx；不加也可用 CSV) -->
   
   <script src="./qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS (XLSX) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- NEW: load login first -->
-<script src="./login.js"></script>
-
-<!-- then the rest of your app -->
-<script src="./app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
-
