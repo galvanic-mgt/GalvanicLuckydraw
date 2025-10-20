@@ -33,7 +33,6 @@ function ensureInit(){
     saveAll(all);
   }
 }
-
 /* === Countdown + confetti utilities (works for Public/CMS/Tablet) === */
 function startCountdown(overlayId, countId, seconds = 3, onDone){
   const overlay = document.getElementById(overlayId);
@@ -162,10 +161,28 @@ function runCountdown(where){ // 'public' | 'cms' | 'tablet'
     } else {
       clearInterval(tick);
       overlay.classList.remove('show');
-      // Do the actual draw now
-      drawBatch(where);
-      // Confetti burst on the correct canvas
-      burstConfetti(canvasId);
+    // Trigger the existing draw button so all logic stays centralized
+    document.getElementById('draw')?.click();
+
+    // After the UI renders the new winner cards, pop confetti at them
+    setTimeout(() => {
+      if (where === 'cms') {
+        const grid  = document.getElementById('currentBatch2');
+        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
+        const last  = cards[cards.length - 1];
+        if (last) blastConfettiAt(last, 'confetti2');
+      } else if (where === 'tablet') {
+        const grid  = document.getElementById('currentBatch3');
+        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
+        cards.forEach(card => blastConfettiAt(card, 'confetti3'));
+      } else {
+        // public (fallback)
+        const grid  = document.getElementById('currentBatch');
+        const cards = grid ? grid.querySelectorAll('.winner-card') : [];
+        const last  = cards[cards.length - 1];
+        if (last) blastConfettiAt(last, 'confetti');
+      }
+    }, 80);
     }
   }, 1000);
 }
@@ -1117,22 +1134,6 @@ if (publicConfettiEl && publicConfettiEl.parentElement !== document.body) {
   document.body.appendChild(publicConfettiEl);
 }
 
-// Ensure nothing sits on top of CMS and blocks pointer events
-function killBlockers(){
-  // Hide *all* overlays and any full-screen stage remnants
-  document.querySelectorAll('.overlay, .overlay.show, #publicView.fullscreen, #tabletView.fullscreen')
-    .forEach(el=>{
-      el.classList.remove('show');
-      el.classList.remove('fullscreen');
-      el.style.display = 'none';
-      el.style.pointerEvents = 'none';
-    });
-}
-// Run once at boot, then whenever CMS tab is activated
-killBlockers();
-document.getElementById('tabCMS')?.addEventListener('click', killBlockers);
-
-
 // Now initialize engines (after moving the node)
 // Public full-screen canvas stays viewport-sized
 confettiPublic = makeConfettiEngine($('confetti'));
@@ -1633,18 +1634,8 @@ searchInput.addEventListener('input', ()=>{
 });
 
 // CMS 倒數抽獎：倒數 → 觸發現有 #draw → 對新卡片放彩帶（畫在 #confetti2）
-const countdownBtn = document.getElementById('countdownDraw');
-if (countdownBtn) countdownBtn.onclick = () => {
-  startCountdown('overlay2', 'count2', 3, () => {
-    document.getElementById('draw')?.click();     // 用你現有的抽獎流程
-    setTimeout(() => {
-      const grid  = document.getElementById('currentBatch2');
-      const cards = grid ? grid.querySelectorAll('.winner-card') : [];
-      const last  = cards[cards.length - 1];
-      if (last) blastConfettiAt(last, 'confetti2');
-    }, 60);
-  });
-};
+document.getElementById('countdownDraw')?.addEventListener('click', () => runCountdown('cms'));
+
 
 // 平板：大「倒數抽獎」按鈕
 const tabletBtn = document.getElementById('tabletCountdown');
@@ -1661,10 +1652,6 @@ if (tabletBtn){
     });
   };
 }
-
-// Tablet: 倒數抽獎（huge button）
-const tabletCountdownBtn = document.getElementById('tabletCountdown');
-if (tabletCountdownBtn) tabletCountdownBtn.onclick = ()=> runCountdown('tablet');
 
   // prizes
   $('addPrize').addEventListener('click', ()=>{
@@ -1684,9 +1671,7 @@ if (tabletCountdownBtn) tabletCountdownBtn.onclick = ()=> runCountdown('tablet')
 
   
   // draw
-btnDraw.addEventListener('click', (e)=>{
-  e.preventDefault();
-  e.stopPropagation();
+btnDraw.addEventListener('click', ()=>{
   state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
   const n=Math.max(1, Number(batchCount.value)||1);
   n===1 ? drawOne() : drawBatch(n);
@@ -1732,8 +1717,7 @@ setTimeout(() => {
 }, 80);
 
 
-  $('clearStage').addEventListener('click', (e)=>{
-  e.preventDefault(); e.stopPropagation();
+  $('clearStage').addEventListener('click', ()=>{
   // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
   state.currentBatch = [];
   state.lastConfirmed = null;
@@ -1750,8 +1734,7 @@ setTimeout(() => {
   } catch {}
 });
 
-  $('clearBatch')?.addEventListener('click', (e)=>{
-  e.preventDefault(); e.stopPropagation();
+  $('clearBatch')?.addEventListener('click', ()=>{
   state.currentBatch = [];
   state.lastConfirmed = null;
   state.lastPick = null;

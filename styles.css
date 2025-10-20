@@ -453,16 +453,3 @@ body:not(.tablet-mode)  #tabletView  { display: none !important; }
   padding-top: clamp(12px, 6vh, 64px);
   padding-bottom: clamp(12px, 6vh, 64px);
 }
-
-/* Make sure CMS toolbar is always clickable */
-#cmsView .stage-toolbar {
-  position: relative;
-  z-index: 1000;
-}
-#cmsView .stage-toolbar .btn {
-  pointer-events: auto;
-}
-.overlay:not(.show) {
-  display: none !important;
-  pointer-events: none !important;
-}
