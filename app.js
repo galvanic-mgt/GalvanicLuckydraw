@@ -256,12 +256,40 @@ if (bc) {
   }
 
 
-    } else if (d.type === 'COUNTDOWN') {
+        } else if (d.type === 'COUNTDOWN') {
       const { from=3, step=700, goAt } = d;
-      showCountdownOverlayAligned(from, step, goAt, 'public').then(()=>{
-        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 30);
+
+      // Show the synced countdown on every surface that exists
+      const jobs = [];
+      if (document.getElementById('overlay'))  jobs.push(showCountdownOverlayAligned(from, step, goAt, 'public'));
+      if (document.getElementById('overlay2')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'cms'));
+      if (document.getElementById('overlay3')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'tablet'));
+
+      Promise.all(jobs).then(()=>{
+        // After countdown completes, pop confetti on all surfaces that exist
+        setTimeout(()=>{
+          const pub = document.getElementById('currentBatch');
+          if (pub && typeof confettiPublic !== 'undefined' && confettiPublic) {
+            fireOnCards(pub, confettiPublic);
+          }
+        }, 30);
+
+        setTimeout(()=>{
+          const cms = document.getElementById('currentBatch2');
+          if (cms && typeof confettiStage !== 'undefined' && confettiStage) {
+            fireOnCards(cms, confettiStage);
+          }
+        }, 30);
+
+        setTimeout(()=>{
+          const tab = document.getElementById('currentBatch3');
+          if (tab && typeof confettiTablet !== 'undefined' && confettiTablet) {
+            fireOnCards(tab, confettiTablet);
+          }
+        }, 30);
       });
     }
+
   };
 }
 
