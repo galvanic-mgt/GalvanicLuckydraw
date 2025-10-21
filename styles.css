@@ -287,3 +287,11 @@ body.tablet-mode header{ display:none; }
 body.tablet-mode #cmsView{ display:none !important; }
 body.tablet-mode #publicView{ display:none !important; }
 
+/* Tablet: a BIG centered button under each winner’s name */
+#currentBatch3 .winner-card .tablet-cta {
+  margin-top: 12px;
+  font-size: clamp(18px, 2.2vw, 24px);
+  padding: 16px 20px;
+  width: min(92%, 520px);
+  text-align: center;
+}
