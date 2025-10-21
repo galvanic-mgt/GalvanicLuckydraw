@@ -1051,7 +1051,7 @@ $('tabletDraw')?.addEventListener('click', ()=>{
 $('tabletCountdown')?.addEventListener('click', async ()=>{
   state.showPollOnly = false; store.save(state); updatePublicPanel();
   const n = Math.max(1, Number(tabletBatch?.value)||1);
-  await countdown();
+  await countdown(3, 700);
   n===1 ? drawOne() : drawBatch(n);
 });
 
@@ -1154,7 +1154,12 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
   });
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{ state.currentPage=Number(pageSelect.value)||1; store.save(state); renderTiles(); });
-  pageSize2.addEventListener('input', e=>{ state.pageSize=Math.min(20, Math.max(5, Number(e.target.value)||12)); store.save(state); renderTiles(); });
+  pageSize2.addEventListener('input', e=>{
+    const val = Number(e.target.value) || 50;
+    state.pageSize = Math.min(100, Math.max(10, val));
+    store.save(state);
+    renderTiles();
+  });
   searchInput.addEventListener('input', renderTiles);
 
   // prizes
@@ -1500,6 +1505,26 @@ function renderRosterList(){
   });
 }
 
+// === Sorting logic for roster ===
+let rosterSort = { field: null, asc: true };
+
+document.addEventListener('click', e=>{
+  const btn = e.target.closest('.sortBtn');
+  if (!btn) return;
+  const field = btn.dataset.field;
+  if (rosterSort.field === field) rosterSort.asc = !rosterSort.asc;
+  else { rosterSort.field = field; rosterSort.asc = true; }
+
+  state.people.sort((a,b)=>{
+    const va = (a[field] ?? '').toString().toLowerCase();
+    const vb = (b[field] ?? '').toString().toLowerCase();
+    if (va < vb) return rosterSort.asc ? -1 : 1;
+    if (va > vb) return rosterSort.asc ? 1 : -1;
+    return 0;
+  });
+  store.save(state);
+  renderRosterList();
+});
 
 
     function renderEventsTable(){
@@ -1936,6 +1961,46 @@ try{
 }
 
 }catch{}
+
+// === Firebase User Management (basic) ===
+const FB_AUTH = {
+  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app',
+  usersPath: '/users'
+};
+
+async function loadUsers(){
+  const list = await FB.get(FB_AUTH.usersPath) || {};
+  const tbody = document.getElementById('userTable');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  Object.entries(list).forEach(([id, u])=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${u.email}</td><td>${u.role}</td>
+    <td><button class="btn danger" data-id="${id}">刪除</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('createUser')?.addEventListener('click', async ()=>{
+  const email = document.getElementById('newUserEmail').value.trim();
+  const password = document.getElementById('newUserPassword').value.trim();
+  const role = document.getElementById('newUserRole').value;
+  if(!email || !password) return alert('請輸入帳號與密碼');
+  const id = btoa(email).replace(/=/g,'');
+  await FB.patch(`${FB_AUTH.usersPath}/${id}`, { email, role });
+  alert('已建立用戶');
+  loadUsers();
+});
+
+document.addEventListener('click', async e=>{
+  const btn = e.target.closest('button[data-id]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  if(!confirm('確定刪除此用戶？')) return;
+  await FB.put(`${FB_AUTH.usersPath}/${id}`, null);
+  loadUsers();
+});
+
 
 function renderAll(){
   renderBG(); renderLogo(); renderBanner();

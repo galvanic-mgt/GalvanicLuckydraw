@@ -94,6 +94,7 @@
           <button class="nav-item" data-target="pagePoll">投票</button>
           <button class="nav-item" data-target="pageStorage">儲存 / 備份</button>
           <button class="nav-item" data-target="pageEventsManage">活動管理</button>
+          <button class="nav-item" data-target="pageUsers">用戶管理</button>
         </nav>
       </aside>
 
@@ -140,7 +141,7 @@
           </div>
           <div class="bar">
             <input id="search" type="text" placeholder="搜尋姓名/部門" />
-            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="20" value="12" /></label>
+            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="10" max="100" value="50" /></label>
             <button id="newPage" class="btn" type="button">+ 加新抽獎頁</button>
             <select id="pageSelect"></select>
           </div>
@@ -152,17 +153,18 @@
         </div>
 
         <table class="table" style="margin-top:8px">
-        <thead>
+       <thead>
           <tr>
-            <th style="min-width:120px">碼</th>
-            <th style="min-width:200px">姓名</th>
-            <th style="min-width:160px">部門</th>
-            <th style="min-width:120px">桌</th>
-            <th style="min-width:120px">座</th>
-            <th style="min-width:120px">狀態</th>
+            <th style="min-width:120px">碼 <button class="sortBtn" data-field="code">↕</button></th>
+            <th style="min-width:200px">姓名 <button class="sortBtn" data-field="name">↕</button></th>
+            <th style="min-width:160px">部門 <button class="sortBtn" data-field="dept">↕</button></th>
+            <th style="min-width:120px">桌 <button class="sortBtn" data-field="table">↕</button></th>
+            <th style="min-width:120px">座 <button class="sortBtn" data-field="seat">↕</button></th>
+            <th style="min-width:120px">狀態 <button class="sortBtn" data-field="checkedIn">↕</button></th>
             <th style="min-width:200px">操作</th>
           </tr>
         </thead>
+
 
           <tbody id="rosterRows"></tbody>
         </table>
@@ -359,6 +361,25 @@
           </table>
         </section>
 
+        <section class="card subpage" id="pageUsers" style="display:none">
+        <h3>用戶管理（Firebase 登入）</h3>
+        <div class="bar">
+          <input id="newUserEmail" placeholder="用戶 Email" />
+          <input id="newUserPassword" type="password" placeholder="密碼" />
+          <select id="newUserRole">
+            <option value="client">客戶用戶（僅看所屬活動）</option>
+            <option value="super">超級用戶（可管理全部）</option>
+          </select>
+          <button id="createUser" class="btn primary" type="button">+ 建立用戶</button>
+        </div>
+        <p class="pill">建立後將同步到 Firebase Authentication / Database</p>
+        <table class="table">
+          <thead><tr><th>Email</th><th>角色</th><th>操作</th></tr></thead>
+          <tbody id="userTable"></tbody>
+        </table>
+      </section>
+
+
       </section>
     </div>
   </main>
@@ -372,5 +393,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script src="./app.js"></script>
+  <script src="./login.js"></script>
+
 </body>
 </html>
