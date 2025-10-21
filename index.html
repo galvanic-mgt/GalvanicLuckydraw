@@ -57,17 +57,49 @@
     <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
   </main>
 
-  <main class="container" id="tabletView" style="display:none">
-  <section class="card" style="padding:14px">
-    <h3 style="margin-top:0">平板控制</h3>
-    <div class="bar" style="margin-bottom:8px">
-      <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
-      <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
-      <button id="tabletDraw" class="btn" type="button">🎲 Draw Now</button>
-    </div>
-    <p class="pill">此頁僅提供抽獎控制；結果會在「公開顯示」的大屏舞台出現。</p>
-  </section>
-</main>
+    <main class="container" id="tabletView" style="display:none">
+      <section class="card" style="padding:14px">
+        <div class="bar" style="justify-content:space-between; align-items:center">
+          <h3 style="margin:0">平板控制（舞台鏡像）</h3>
+          <div class="bar">
+            <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
+            <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
+            <button id="tabletDraw" class="btn" type="button">🎲 即抽</button>
+            <button id="tabletFullscreen" class="btn" type="button">⛶ 全屏</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- A stage that mirrors CMS/Public -->
+      <section class="card stage" id="tabletStage">
+        <img id="logoEl3" class="logo" alt="logo" />
+        <div id="bgEl3" class="bg"></div>
+        <canvas id="confetti3"></canvas>
+
+        <div class="stage-inner">
+          <div id="banner3" class="banner"></div>
+
+          <div class="row prize-header">
+            <div class="prize-title" id="publicPrize3">—</div>
+            <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
+          </div>
+
+          <!-- Winner cards (tablet). We’ll inject a BIG countdown button under each name via JS. -->
+          <div id="currentBatch3" class="batch-grid" data-mode="tablet"></div>
+
+          <div class="winners-list" id="winnersChips3"></div>
+
+          <div class="bar" style="justify-content:center;margin-top:12px">
+            <span class="stat" id="statsRemain3">剩餘：0</span>
+            <span class="stat" id="statsWinners3">已得獎：0</span>
+          </div>
+        </div>
+
+        <!-- Tablet overlay for countdown -->
+        <div class="overlay" id="overlay3"><div class="count" id="count3">3</div></div>
+      </section>
+    </main>
+
 
   <!-- CMS view -->
   <main class="container" id="cmsView">

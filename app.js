@@ -193,16 +193,52 @@ if (bc) {
 
 
     } else if (d.type === 'REROLL_BURST') {
-      if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
-        const idx = d.at || 0;
-        const cards = document.querySelectorAll('#currentBatch .winner-card');
-        if (cards[idx]) fireAtElement(cards[idx], confettiPublic, 140);
-      }
+  const idx = d.at || 0;
 
-    } else if (d.type === 'DRAW_BURST') {
-      if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
-        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 10);
+  // Public stage
+  const pubCards = document.querySelectorAll('#currentBatch .winner-card');
+  if (pubCards[idx] && typeof confettiPublic !== 'undefined' && confettiPublic) {
+    fireAtElement(pubCards[idx], confettiPublic, 140);
+  }
+
+  // CMS embedded stage
+  const cmsCards = document.querySelectorAll('#currentBatch2 .winner-card');
+  if (cmsCards[idx] && typeof confettiStage !== 'undefined' && confettiStage) {
+    fireAtElement(cmsCards[idx], confettiStage, 140);
+  }
+
+  // Tablet stage
+  const tbCards = document.querySelectorAll('#currentBatch3 .winner-card');
+  if (tbCards[idx] && typeof confettiTablet !== 'undefined' && confettiTablet) {
+    fireAtElement(tbCards[idx], confettiTablet, 140);
+  }
+
+
+  } else if (d.type === 'DRAW_BURST') {
+    // Public stage
+    setTimeout(()=>{ 
+      const el = document.getElementById('currentBatch'); 
+      if (el && typeof confettiPublic !== 'undefined' && confettiPublic) {
+        fireOnCards(el, confettiPublic); 
       }
+    }, 10);
+
+    // CMS embedded stage
+    setTimeout(()=>{ 
+      const el = document.getElementById('currentBatch2'); 
+      if (el && typeof confettiStage !== 'undefined' && confettiStage) {
+        fireOnCards(el, confettiStage); 
+      }
+    }, 10);
+
+    // Tablet stage
+    setTimeout(()=>{ 
+      const el = document.getElementById('currentBatch3'); 
+      if (el && typeof confettiTablet !== 'undefined' && confettiTablet) {
+        fireOnCards(el, confettiTablet); 
+      }
+    }, 10);
+
 
       } else if (d.type === 'SHOW_POLL_RESULT') {
   // Only the Public screen should respond
@@ -254,11 +290,14 @@ async function showCountdownOverlayAligned(from=3, step=700, goAt, scope='auto')
 
   if (scope === 'public') { ov = $('overlay');  cnt = $('count');  }
   else if (scope === 'cms') { ov = $('overlay2'); cnt = $('count2'); }
+  else if (scope === 'tablet') { ov = $('overlay3'); cnt = $('count3'); }
   else {
+    const isTablet = document.body.classList.contains('tablet-mode');
     const publicVisible = document.body.classList.contains('public-mode')
       || (publicView && publicView.style.display !== 'none');
-    if (publicVisible) { ov=$('overlay'); cnt=$('count'); }
-    else { ov=$('overlay2'); cnt=$('count2'); }
+    if (isTablet)      { ov=$('overlay3'); cnt=$('count3'); }
+    else if (publicVisible) { ov=$('overlay');  cnt=$('count');  }
+    else               { ov=$('overlay2'); cnt=$('count2'); }
   }
 
   if(!ov || !cnt) return;
@@ -461,54 +500,116 @@ function renderBanner(){ [bannerEl,bannerEl2].forEach(el=>{ if(el) el.style.back
 function renderBatchTargets(targetGrid){
   targetGrid.innerHTML='';
   (state.currentBatch||[]).forEach((w,i)=>{
-    const card=document.createElement('div'); card.className='winner-card';
-    const n=document.createElement('div'); n.className='name'; n.textContent=w.name;
-    const d=document.createElement('div'); d.className='dept'; d.textContent=w.dept||'';
-    const rer=document.createElement('button'); rer.textContent='缺席重抽'; rer.className='btn primary reroll-btn'; 
-    rer.style.position='absolute'; rer.style.bottom='8px'; rer.style.right='8px';
+    const card=document.createElement('div'); 
+    card.className='winner-card';
+
+    const n=document.createElement('div'); 
+    n.className='name'; 
+    n.textContent=w.name;
+
+    const d=document.createElement('div'); 
+    d.className='dept'; 
+    d.textContent=w.dept||'';
+
+    // Reroll button (kept for CMS/Public)
+    const rer=document.createElement('button'); 
+    rer.textContent='缺席重抽'; 
+    rer.className='btn primary reroll-btn'; 
+    rer.style.position='absolute'; 
+    rer.style.bottom='8px'; 
+    rer.style.right='8px';
     rer.onclick=()=>rerollAt(i);
-    card.append(n,d,rer); targetGrid.appendChild(card);
-    
+
+    card.append(n,d);
+
+    // Tablet-only BIG countdown draw button under the name
+    if (targetGrid.id === 'currentBatch3') {
+      const big = document.createElement('button');
+      big.className = 'btn primary tablet-cta';
+      big.type = 'button';
+      big.textContent = '⏱️ 倒數抽獎';
+      big.onclick = async ()=>{
+        state.showPollOnly = false; store.save(state); updatePublicPanel();
+        const n = Math.max(1, Number(document.getElementById('tabletBatch')?.value) || 1);
+        await countdown(3, 700);          // shows on tablet (and syncs to CMS/Public)
+        n===1 ? drawOne() : drawBatch(n); // triggers confetti everywhere
+      };
+      card.appendChild(big);
+    }
+
+    card.appendChild(rer);
+    targetGrid.appendChild(card);
   });
 }
+
 function updatePublicPanel(){
-  const p=currentPrize();
+  const p = currentPrize();
+
+  // ——— Prize title (Public + CMS)
   [publicPrizeEl, publicPrize2].forEach(el=>{
-  if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
-});
-const remainText  = `剩餘：${state.remaining.length}`;
-const winnersText = `已得獎：${state.winners.length}`;
+    if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
+  });
 
-[document.getElementById('statsRemain'),
- document.getElementById('statsRemain2')].forEach(el => { if (el) el.textContent = remainText; });
+  const remainText  = `剩餘：${state.remaining.length}`;
+  const winnersText = `已得獎：${state.winners.length}`;
 
-[document.getElementById('statsWinners'),
- document.getElementById('statsWinners2')].forEach(el => { if (el) el.textContent = winnersText; });
+  // ——— Stats (Public + CMS)
+  [document.getElementById('statsRemain'),
+   document.getElementById('statsRemain2')].forEach(el => { if (el) el.textContent = remainText; });
 
-const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
-// Update both the new inline badges and (if you keep it) the old bottom stat
-[document.getElementById('prizeLeftInline'),
- document.getElementById('prizeLeftInline2'),
- statsPrizeLeft].forEach(el => { if (el) el.textContent = leftText; });
+  [document.getElementById('statsWinners'),
+   document.getElementById('statsWinners2')].forEach(el => { if (el) el.textContent = winnersText; });
 
-  const html = p? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
+  const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
+  // Update both the new inline badges and (if you keep it) the old bottom stat
+  [document.getElementById('prizeLeftInline'),
+   document.getElementById('prizeLeftInline2'),
+   statsPrizeLeft].forEach(el => { if (el) el.textContent = leftText; });
+
+  // ===== ADD: Tablet mirrors (title + stats) =====
+  const publicPrize3 = document.getElementById('publicPrize3');
+  if (publicPrize3) publicPrize3.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
+
+  const sr3 = document.getElementById('statsRemain3');
+  if (sr3) sr3.textContent = remainText;
+
+  const sw3 = document.getElementById('statsWinners3');
+  if (sw3) sw3.textContent = winnersText;
+
+  const pl3 = document.getElementById('prizeLeftInline3');
+  if (pl3) pl3.textContent = leftText;
+  // ===== END tablet mirrors =====
+
+  const html = p ? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
   // no bottom chips needed
-if(winnersChips) winnersChips.innerHTML = '';
-if(winnersChips2) winnersChips2.innerHTML = '';
+  if (winnersChips)  winnersChips.innerHTML  = '';
+  if (winnersChips2) winnersChips2.innerHTML = '';
+  // ===== ADD: clear tablet chips too (keep consistent) =====
+  const winnersChips3 = document.getElementById('winnersChips3');
+  if (winnersChips3) winnersChips3.innerHTML = '';
+  // =====
 
+  // Branding / visuals
   renderBanner();
-  if(batchGrid) renderBatchTargets(batchGrid);
-  if(batchGrid2) renderBatchTargets(batchGrid2);
 
-    // show/refresh the current poll’s QR on the public stage
+  // Winner cards (grids)
+  if (batchGrid)  renderBatchTargets(batchGrid);
+  if (batchGrid2) renderBatchTargets(batchGrid2);
+  
+  // ===== ADD: render tablet grid =====
+  const batchGrid3 = document.getElementById('currentBatch3');
+  if (batchGrid3) renderBatchTargets(batchGrid3);
+  // =====
+
+  // show/refresh the current poll’s QR on the public stage
   renderActivePollQR();
 
   // Center Public view on the poll QR when requested
-document.body.classList.toggle('poll-only',
-  !!(document.body.classList.contains('public-mode') && state.showPollOnly)
-);
-
+  document.body.classList.toggle('poll-only',
+    !!(document.body.classList.contains('public-mode') && state.showPollOnly)
+  );
 }
+
 
 // roster
 function filterBySearch(list){ const q=(searchInput?.value||'').trim().toLowerCase(); if(!q) return list; return list.filter(p=> (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q)); }
@@ -567,6 +668,7 @@ function drawOne(){ if(state.remaining.length===0) return null; const person=sam
 fireOnCards(document.getElementById('currentBatch2'), confettiStage);
 // ask the public window to burst on its cards
 try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
+fireOnCards(document.getElementById('currentBatch3'), (typeof confettiTablet!=='undefined'?confettiTablet:null));
 return person;
 }
 function drawBatch(n){
@@ -579,8 +681,9 @@ store.save(state); renderAll();
 fireOnCards(document.getElementById('currentBatch2'), confettiStage);
 // ask the public window to burst on its cards
 try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
-
+fireOnCards(document.getElementById('currentBatch3'), (typeof confettiTablet!=='undefined'?confettiTablet:null));
 }
+
 function rerollAt(index){
   const prize=currentPrize(); if(!prize) return;
   if(!state.currentBatch[index]) return;
@@ -592,7 +695,6 @@ function rerollAt(index){
   }
   addWinnerRecords(prize, newPerson); state.currentBatch[index]=newPerson; rebuildRemainingFromPeople(); store.save(state); renderAll();
 
-  
   // CMS embedded
 const cmsCards = document.querySelectorAll('#currentBatch2 .winner-card');
 fireAtElement(cmsCards[index], confettiStage, 140);
@@ -601,6 +703,13 @@ fireAtElement(cmsCards[index], confettiStage, 140);
 try { 
   bc && bc.postMessage({ type:'REROLL_BURST', at:index, ts: Date.now() }); 
 } catch {}
+
+// Tablet stage confetti (if the tablet stage is present)
+const tbCards = document.querySelectorAll('#currentBatch3 .winner-card');
+if (tbCards[index] && typeof confettiTablet !== 'undefined' && confettiTablet) {
+  fireAtElement(tbCards[index], confettiTablet, 140);
+}
+
 // --- LOG this reroll ---
 state.rerolls = state.rerolls || [];
 const log = {
@@ -723,11 +832,6 @@ function pollURL(pollId, view = 'poll'){
     return u.toString();
   }
 }
-
-
-
-
-
 
 function ensurePollVotes(p){ p.votes = p.votes || {}; return p; }
 
@@ -885,6 +989,23 @@ document.addEventListener('DOMContentLoaded', ()=>{
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
   openFullStageLink=$('openFullStage');
+
+    // Tablet stage refs
+  const publicPrize3 = $('publicPrize3');
+  const batchGrid3   = $('currentBatch3');
+  const winnersChips3= $('winnersChips3');
+  const bgEl3        = $('bgEl3');
+  const logoEl3      = $('logoEl3');
+  const bannerEl3    = $('banner3');
+
+  // Build a confetti engine for the tablet stage (hosted/sized to the stage)
+  const tabletStageEl = document.getElementById('tabletStage');
+  const confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl);
+
+  // Tablet fullscreen toggle
+  $('tabletFullscreen')?.addEventListener('click', ()=>{
+    const d=document.documentElement; d.requestFullscreen && d.requestFullscreen();
+  });
 
   // Ensure the public confetti canvas sits at <body> level (not inside .stage)
 const publicConfettiEl = $('confetti');
@@ -1216,31 +1337,54 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
     store.save(state); renderAll(); alert(`已匯入 ${items.length} 項獎品`);
   });
 
-  // draw
-btnDraw.addEventListener('click', ()=>{
-  state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
-  const n=Math.max(1, Number(batchCount.value)||1);
-  n===1 ? drawOne() : drawBatch(n);
-});
-btnCountdown.addEventListener('click', async ()=>{
-  state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
-  const n=Math.max(1, Number(batchCount.value)||1);
-  await countdown();
-  n===1 ? drawOne() : drawBatch(n);
-});
-  btnConfirm.addEventListener('click', ()=>{ if(!currentPick){ return; } const prize=currentPrize(); if(!prize){ alert('請選擇獎品'); return; }
-    state.remaining=state.remaining.filter(x=>!(x.name===currentPick.name && x.dept===currentPick.dept));
-    addWinnerRecords(prize,currentPick); state.lastConfirmed=currentPick; state.lastPick={prizeId:prize.id,people:[currentPick]}; state.currentBatch=[currentPick];
-    currentPick=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
-
-// CMS: burst on the actual winner card(s)
-fireOnCards(document.getElementById('currentBatch2'), confettiStage);
-
-// Tell the Public window to burst on its cards too
-try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
-
-
+    // draw
+  btnDraw.addEventListener('click', ()=>{
+    state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
+    const n=Math.max(1, Number(batchCount.value)||1);
+    n===1 ? drawOne() : drawBatch(n);
   });
+  btnCountdown.addEventListener('click', async ()=>{
+    state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
+    const n=Math.max(1, Number(batchCount.value)||1);
+    await countdown();
+    n===1 ? drawOne() : drawBatch(n);
+  });
+  btnConfirm.addEventListener('click', ()=>{
+    if(!currentPick){ return; }
+    const prize = currentPrize();
+    if(!prize){ alert('請選擇獎品'); return; }
+
+    // persist winner
+    state.remaining = state.remaining.filter(x => !(x.name===currentPick.name && x.dept===currentPick.dept));
+    addWinnerRecords(prize, currentPick);
+    state.lastConfirmed = currentPick;
+    state.lastPick = { prizeId: prize.id, people: [currentPick] };
+    state.currentBatch = [currentPick];
+
+    // finalize + re-render
+    currentPick = null;
+    rebuildRemainingFromPeople();
+    store.save(state);
+    renderAll();
+
+    // --- CONFETTI: CMS embedded stage
+    const cmsGrid = document.getElementById('currentBatch2');
+    if (cmsGrid && typeof confettiStage !== 'undefined' && confettiStage) {
+      fireOnCards(cmsGrid, confettiStage);
+    }
+
+    // --- CONFETTI: Tablet stage
+    const tbGrid = document.getElementById('currentBatch3');
+    if (tbGrid && typeof confettiTablet !== 'undefined' && confettiTablet) {
+      fireOnCards(tbGrid, confettiTablet);
+    }
+
+    // --- NOTIFY: Public/fullscreen windows to burst too
+    try {
+      bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() });
+    } catch {}
+  });
+
   btnUndo.addEventListener('click', ()=>{
     const lp=state.lastPick; if(!lp) return;
     const prize=state.prizes.find(x=>x.id===lp.prizeId); if(!prize) return;
