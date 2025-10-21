@@ -1066,8 +1066,8 @@ searchInput.addEventListener('input', ()=>{
   prizeRows=$('prizeRows'); prizeSearch=$('prizeSearch'); newPrizeName=$('newPrizeName'); newPrizeQuota=$('newPrizeQuota'); prizeFile=$('prizeFile'); importPrizesBtn=$('importPrizes');
 
   // draw
-  batchCount=$('batchCount'); btnDraw=$('draw'); btnCountdown=$('countdownDraw'); btnConfirm=$('confirm'); btnUndo=$('undo'); btnExportWinners=$('exportWinners');
-
+  batchCount=$('batchCount'); btnDraw=$('draw'); btnCountdown=$(''); btnConfirm=$('confirm'); btnUndo=$('undo'); btnExportWinners=$('exportWinners');
+countdownDraw
   // questions
   newQText=$('newQText'); newQType=$('newQType'); newQOptions=$('newQOptions'); newQRequired=$('newQRequired'); questionsTable=$('questionsTable');
 
@@ -1182,11 +1182,11 @@ $('tabletDraw')?.addEventListener('click', ()=>{
   n===1 ? drawOne() : drawBatch(n);
 });
 $('tabletCountdown')?.addEventListener('click', async ()=>{
-  state.showPollOnly = false; store.save(state); updatePublicPanel();
   const n = Math.max(1, Number(tabletBatch?.value)||1);
-  await showCountdownOverlayAligned(3, 700, undefined, 'tablet'); // local Tablet overlay
+  await showCountdownOverlayAligned(3, 700, undefined, 'tablet'); // local
   n===1 ? drawOne() : drawBatch(n);
 });
+
 
 
   // left nav subpages
