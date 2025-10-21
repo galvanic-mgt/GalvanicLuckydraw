@@ -256,12 +256,40 @@ if (bc) {
   }
 
 
-    } else if (d.type === 'COUNTDOWN') {
+        } else if (d.type === 'COUNTDOWN') {
       const { from=3, step=700, goAt } = d;
-      showCountdownOverlayAligned(from, step, goAt, 'public').then(()=>{
-        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 30);
+
+      // Show the synced countdown on every surface that exists
+      const jobs = [];
+      if (document.getElementById('overlay'))  jobs.push(showCountdownOverlayAligned(from, step, goAt, 'public'));
+      if (document.getElementById('overlay2')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'cms'));
+      if (document.getElementById('overlay3')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'tablet'));
+
+      Promise.all(jobs).then(()=>{
+        // After countdown completes, pop confetti on all surfaces that exist
+        setTimeout(()=>{
+          const pub = document.getElementById('currentBatch');
+          if (pub && typeof confettiPublic !== 'undefined' && confettiPublic) {
+            fireOnCards(pub, confettiPublic);
+          }
+        }, 30);
+
+        setTimeout(()=>{
+          const cms = document.getElementById('currentBatch2');
+          if (cms && typeof confettiStage !== 'undefined' && confettiStage) {
+            fireOnCards(cms, confettiStage);
+          }
+        }, 30);
+
+        setTimeout(()=>{
+          const tab = document.getElementById('currentBatch3');
+          if (tab && typeof confettiTablet !== 'undefined' && confettiTablet) {
+            fireOnCards(tab, confettiTablet);
+          }
+        }, 30);
       });
     }
+
   };
 }
 
@@ -531,7 +559,7 @@ function renderBatchTargets(targetGrid){
       big.onclick = async ()=>{
         state.showPollOnly = false; store.save(state); updatePublicPanel();
         const n = Math.max(1, Number(document.getElementById('tabletBatch')?.value) || 1);
-        await showCountdownOverlayAligned(3, 700, undefined, 'cms');  // local only
+        await countdown(3, 700);          // shows on tablet (and syncs to CMS/Public)
         n===1 ? drawOne() : drawBatch(n); // triggers confetti everywhere
       };
       card.appendChild(big);
