@@ -9,7 +9,7 @@ function baseState(){
   return {
     people:[], remaining:[], winners:[],
     bg:null, logo:null, banner:null,
-    pageSize:12, pages:[{id:1}], currentPage:1,
+    pageSize:50, rosterPage:1, pages:[{id:1}], currentPage:1,
     lastConfirmed:null, lastPick:null, currentBatch:[],
     prizes:[], currentPrizeId:null,
     eventInfo:{title:'',client:'',dateTime:'',venue:'',address:'',mapUrl:'',bus:'',train:'',parking:'',notes:''},
@@ -909,6 +909,13 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
   // roster
   csvInput=$('csv'); btnPreset=$('preset'); btnExportCheckin=$('exportCheckin'); btnExportSession=$('exportSession'); importSessionInput=$('importSession');
   pageSelect=$('pageSelect'); searchInput=$('search'); pageSize2=$('pageSize2');
+
+  // roster pager
+  const prevPageBtn = $('prevPage');
+  const nextPageBtn = $('nextPage');
+  const pageHint    = $('pageHint');
+  const rosterCount = $('rosterCount');
+
   const addName = $('addName'), addDept = $('addDept'), addPresent = $('addPresent'), addPersonBtn = $('addPerson');
 
   addPersonBtn.addEventListener('click', ()=>{
@@ -927,7 +934,12 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
   renderRosterList(); updatePublicPanel();
 });
 
-searchInput.addEventListener('input', renderRosterList);
+searchInput.addEventListener('input', ()=>{
+  state.rosterPage = 1;
+  store.save(state);
+  renderRosterList();
+});
+
 
   // prizes
   prizeRows=$('prizeRows'); prizeSearch=$('prizeSearch'); newPrizeName=$('newPrizeName'); newPrizeQuota=$('newPrizeQuota'); prizeFile=$('prizeFile'); importPrizesBtn=$('importPrizes');
@@ -1154,12 +1166,38 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
   });
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
   pageSelect.addEventListener('change', ()=>{ state.currentPage=Number(pageSelect.value)||1; store.save(state); renderTiles(); });
-  pageSize2.addEventListener('input', e=>{
+    pageSize2.addEventListener('input', e=>{
     const val = Number(e.target.value) || 50;
-    state.pageSize = Math.min(100, Math.max(10, val));
+    state.pageSize   = Math.min(100, Math.max(10, val));
+    state.rosterPage = 1; // reset to first page whenever page size changes
     store.save(state);
-    renderTiles();
+    renderRosterList();
   });
+
+    prevPageBtn?.addEventListener('click', ()=>{
+    const size = Number(state.pageSize) || 50;
+    const total = (state.people || []).filter(p=>{
+      const q=(searchInput?.value||'').trim().toLowerCase();
+      return !q || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q);
+    }).length;
+    const pages = Math.max(1, Math.ceil(total / size));
+    state.rosterPage = Math.max(1, (state.rosterPage || 1) - 1);
+    store.save(state);
+    renderRosterList();
+  });
+
+  nextPageBtn?.addEventListener('click', ()=>{
+    const size = Number(state.pageSize) || 50;
+    const total = (state.people || []).filter(p=>{
+      const q=(searchInput?.value||'').trim().toLowerCase();
+      return !q || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q);
+    }).length;
+    const pages = Math.max(1, Math.ceil(total / size));
+    state.rosterPage = Math.min(pages, (state.rosterPage || 1) + 1);
+    store.save(state);
+    renderRosterList();
+  });
+
   searchInput.addEventListener('input', renderTiles);
 
   // prizes
@@ -1351,19 +1389,34 @@ function deleteReroll(rrId){
 
 function renderRosterList(){
   const tbody = document.getElementById('rosterRows');
+  const pageHint = document.getElementById('pageHint');
+  const rosterCount = document.getElementById('rosterCount');
+  const prevPageBtn = document.getElementById('prevPage');
+  const nextPageBtn = document.getElementById('nextPage');
+
   if (!tbody) return;
   tbody.innerHTML = '';
 
   const q = (searchInput?.value || '').trim().toLowerCase();
-  const filtered = (state.people || []).filter(p =>
+  const all = (state.people || []);
+  const filtered = all.filter(p =>
     (!q) ||
     (p.name||'').toLowerCase().includes(q) ||
     (p.dept||'').toLowerCase().includes(q)
   );
 
+  const size  = Number(state.pageSize) || 50;
+  const pages = Math.max(1, Math.ceil(filtered.length / size));
+  state.rosterPage = Math.min(Math.max(1, state.rosterPage || 1), pages);
+
+  const start = (state.rosterPage - 1) * size;
+  const end   = Math.min(filtered.length, start + size);
+  const pageItems = filtered.slice(start, end);
+
   const eventId = store.current().id;
 
-  filtered.forEach((p)=>{
+  // ---- rows for current page
+  pageItems.forEach((p)=>{
     const tr = document.createElement('tr');
 
     // --- code
@@ -1374,7 +1427,6 @@ function renderRosterList(){
     codeIn.onchange = ()=>{
       p.code = (codeIn.value || '').trim();
       store.save(state);
-      // also mirror code change to cloud record if we already have one
       if (p.code) {
         FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
           name: p.name || '',
@@ -1420,9 +1472,7 @@ function renderRosterList(){
     tableIn.onchange = ()=>{
       p.table = (tableIn.value || '').trim();
       store.save(state);
-      if (p.code) {
-        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { table: p.table }).catch(()=>{});
-      }
+      if (p.code) FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { table: p.table }).catch(()=>{});
     };
     tdTable.appendChild(tableIn);
 
@@ -1434,9 +1484,7 @@ function renderRosterList(){
     seatIn.onchange = ()=>{
       p.seat = (seatIn.value || '').trim();
       store.save(state);
-      if (p.code) {
-        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { seat: p.seat }).catch(()=>{});
-      }
+      if (p.code) FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { seat: p.seat }).catch(()=>{});
     };
     tdSeat.appendChild(seatIn);
 
@@ -1457,7 +1505,6 @@ function renderRosterList(){
       store.save(state);
       renderRosterList();
       updatePublicPanel();
-      // mirror to cloud eligibility
       if (p.code) {
         FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, {
           arrived: !!p.checkedIn,
@@ -1494,7 +1541,7 @@ function renderRosterList(){
       store.save(state);
       renderRosterList();
       updatePublicPanel();
-      // (optional) if you want to also remove cloud record when code exists:
+      // (optional) cloud delete
       // if (p.code) FB.put(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, null).catch(()=>{});
     };
 
@@ -1503,7 +1550,18 @@ function renderRosterList(){
     tr.append(tdCode, tdName, tdDept, tdTable, tdSeat, tdStatus, tdOps);
     tbody.appendChild(tr);
   });
+
+  // ---- pager status + buttons
+  if (pageHint) pageHint.textContent = `第 ${pages === 0 ? 1 : state.rosterPage} / ${pages || 1} 頁`;
+  if (rosterCount) {
+    const from = filtered.length ? (start + 1) : 0;
+    const to   = end;
+    rosterCount.textContent = `共 ${filtered.length} 人 · 顯示 ${from}–${to}`;
+  }
+  if (prevPageBtn) prevPageBtn.disabled = (state.rosterPage <= 1);
+  if (nextPageBtn) nextPageBtn.disabled = (state.rosterPage >= pages);
 }
+
 
 // === Sorting logic for roster ===
 let rosterSort = { field: null, asc: true };

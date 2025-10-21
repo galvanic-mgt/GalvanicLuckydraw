@@ -164,12 +164,21 @@
             <th style="min-width:200px">操作</th>
           </tr>
         </thead>
-
-
-          <tbody id="rosterRows"></tbody>
+           <tbody id="rosterRows"></tbody>
         </table>
 
-        </section>
+          <!-- Pager for roster -->
+          <div class="bar" id="rosterPager" style="justify-content:space-between; margin-top:8px">
+            <div class="pill" id="rosterCount">共 0 人 · 顯示 0–0</div>
+            <div class="bar">
+              <button id="prevPage" class="btn" type="button">上一頁</button>
+              <span class="pill" id="pageHint">第 1 / 1 頁</span>
+              <button id="nextPage" class="btn" type="button">下一頁</button>
+            </div>
+          </div>
+
+          </section>
+
 
         <!-- 獎品（匯入） -->
         <section class="card subpage" id="pagePrizes" style="display:none">
