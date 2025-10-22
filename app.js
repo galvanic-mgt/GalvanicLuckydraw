@@ -550,20 +550,6 @@ function renderBatchTargets(targetGrid){
 
     card.append(n,d);
 
-    // Tablet-only BIG countdown draw button under the name
-    if (targetGrid.id === 'currentBatch3') {
-      const big = document.createElement('button');
-      big.className = 'btn primary tablet-cta';
-      big.type = 'button';
-      big.textContent = '⏱️ 倒數抽獎';
-      big.onclick = async ()=>{
-        state.showPollOnly = false; store.save(state); updatePublicPanel();
-        const n = Math.max(1, Number(document.getElementById('tabletBatch')?.value) || 1);
-        await countdown(3, 700);          // shows on tablet (and syncs to CMS/Public)
-        n===1 ? drawOne() : drawBatch(n); // triggers confetti everywhere
-      };
-      card.appendChild(big);
-    }
 
     card.appendChild(rer);
     targetGrid.appendChild(card);
@@ -1215,6 +1201,13 @@ $('tabletCountdown')?.addEventListener('click', async ()=>{
   await countdown(3, 700);
   n===1 ? drawOne() : drawBatch(n);
 });
+$('tabletCountdownBig')?.addEventListener('click', async ()=>{
+  state.showPollOnly = false; store.save(state); updatePublicPanel();
+  const n = Math.max(1, Number(tabletBatch?.value)||1);
+  await countdown(3, 700);
+  n===1 ? drawOne() : drawBatch(n);
+});
+
 
 
   // left nav subpages
