@@ -287,6 +287,31 @@ body.tablet-mode header{ display:none; }
 body.tablet-mode #cmsView{ display:none !important; }
 body.tablet-mode #publicView{ display:none !important; }
 
+/* Tablet: make the stage full-bleed like Public */
+body.tablet-mode .container{
+  max-width: 100vw;
+  padding: 0;
+}
+
+body.tablet-mode #tabletView{
+  display: block !important;          /* ensure it's visible when tab active */
+}
+
+body.tablet-mode #tabletView .card{
+  border: none;
+  border-radius: 0;
+}
+
+body.tablet-mode #tabletView .stage{
+  min-height: 100vh;                   /* fill the full viewport height */
+  border: none;                        /* remove the card frame look */
+  border-radius: 0;                    /* square corners like Public */
+}
+
+body.tablet-mode #tabletView .stage .stage-inner{
+  padding: clamp(16px, 3vw, 28px) clamp(16px, 3.5vw, 32px);
+}
+
 /* Tablet: a BIG centered button under each winner’s name */
 #currentBatch3 .winner-card .tablet-cta {
   margin-top: 12px;
