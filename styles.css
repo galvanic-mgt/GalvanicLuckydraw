@@ -320,3 +320,15 @@ body.tablet-mode #tabletView .stage .stage-inner{
   width: min(92%, 520px);
   text-align: center;
 }
+
+/* ==== Client role locks (UI only) ==== */
+body.client-mode #publicView,
+body.client-mode #tabletView { display: none !important; }
+
+body.client-mode #openFullStage,
+body.client-mode #fullscreen,
+body.client-mode #tabletFullscreen,
+body.client-mode #landingLink { display: none !important; }
+
+/* In client mode, de-emphasize edit-only widgets */
+body.client-mode .client-hide { display: none !important; }

@@ -40,32 +40,72 @@
 
   // UI role application (unchanged)
   function applyRoleUI(role){
-    const navItems = document.querySelectorAll('#cmsNav .nav-item');
-    navItems.forEach(item => {
-      const target = item.getAttribute('data-target');
-      if (role === 'client') {
-        const visible = (target === 'pageRoster');  // clients: roster only
-        item.style.display = visible ? '' : 'none';
-        if (!visible) {
-          const sec = document.getElementById(target);
-          if (sec) sec.style.display = 'none';
-        }
-      } else {
-        item.style.display = '';
-      }
-    });
+  // tag the body for CSS locks
+  document.body.classList.toggle('client-mode', role === 'client');
 
+  // Left CMS nav: only show 名單 for client, all tabs for super
+  const navItems = document.querySelectorAll('#cmsNav .nav-item');
+  navItems.forEach(item => {
+    const target = item.getAttribute('data-target');
     if (role === 'client') {
-      document.getElementById('cmsView')?.setAttribute('style','');
-      const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
-      if (rosterBtn) {
-        document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
-        rosterBtn.classList.add('active');
-        document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
-        document.getElementById('pageRoster').style.display = 'block';
+      const allow = (target === 'pageRoster');   // ONLY roster tab
+      item.style.display = allow ? '' : 'none';
+      if (!allow) {
+        const sec = document.getElementById(target);
+        if (sec) sec.style.display = 'none';
       }
+    } else {
+      item.style.display = '';
+    }
+  });
+
+  function restrictClientEvents(){
+  const getAuthSafe = (typeof getAuth === 'function') ? getAuth : ()=>null;
+  const me = getAuthSafe && getAuthSafe();
+  const allowed = (me && Array.isArray(me.events)) ? me.events : [];
+
+  const list = document.querySelector('.event-list');    // sidebar container
+  const items = document.querySelectorAll('.event-item'); // each event row
+
+  // Hide any event the client is not allowed to see
+  items.forEach(el=>{
+    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
+    el.style.display = (!allowed.length || allowed.includes(id)) ? '' : 'none';
+  });
+
+  // If current selection becomes hidden, jump to first allowed
+  const active = document.querySelector('.event-item.active');
+  if (active && active.style.display === 'none') {
+    const firstAllowed = Array.from(items).find(el => el.style.display !== 'none');
+    if (firstAllowed) firstAllowed.click();
+  }
+
+  // Block clicks on disallowed events
+  list?.addEventListener('click', (e)=>{
+    const el = e.target.closest('.event-item');
+    if (!el) return;
+    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
+    if (allowed.length && !allowed.includes(id)) {
+      e.stopPropagation();
+      e.preventDefault();
+      alert('此帳號無權限訪問該活動');
+    }
+  }, { once:true });
+}
+
+  // If client, force-select Roster tab
+  if (role === 'client') {
+    const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
+    if (rosterBtn) {
+      document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
+      rosterBtn.classList.add('active');
+      document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
+      const rosterPage = document.getElementById('pageRoster');
+      if (rosterPage) rosterPage.style.display = 'block';
     }
   }
+}
+
 
   function restrictClientEvents(){
   const me = getAuth && getAuth();
