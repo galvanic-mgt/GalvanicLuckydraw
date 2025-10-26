@@ -2199,99 +2199,141 @@ function renderAll(){
   if(!document.querySelector('.nav-item.active')) setActivePage('pageEvent');
 }
 
-/* ==== Users Management (Firebase RTDB) ==== */
+/* === Users (Firebase RTDB) : Create / List / Delete ======================== */
+/* This block is self-contained and uses the Firebase compat SDK you already
+   initialize in index.html (window.rtdb). It also gracefully no-ops if that
+   SDK is not present. */
+
 (function initUsersPage(){
-  if (!(window.rtdb && window.firebase)) {
-    console.warn('[Users] Firebase not configured — user management will fall back to local login only.');
-  }
+  // Bail if Firebase isn’t available or the page section doesn’t exist
+  const hasFB = !!(window.rtdb && window.firebase);
+  const section = document.getElementById('pageUsers');
+  if (!section) return;
 
   const els = {
     email: document.getElementById('newUserEmail'),
     pass:  document.getElementById('newUserPassword'),
     role:  document.getElementById('newUserRole'),
     btn:   document.getElementById('createUser'),
-    table: document.getElementById('userTable'),
+    table: document.getElementById('userTable')
   };
 
-  if (!els.email || !els.pass || !els.role || !els.btn || !els.table) return;
+  // Hard guard: prevent using this page if Firebase is not configured
+  function guardFirebase(){
+    if (hasFB) return true;
+    if (els.btn) {
+      els.btn.disabled = true;
+      els.btn.title = 'Firebase 尚未初始化（請先在 index.html 填入 Firebase 設定）';
+    }
+    return false;
+  }
 
-  const usersPath = '/users';
-
+  // Render the table rows from a /users snapshot object
   function renderUsers(obj){
-    const list = Object.values(obj || {});
+    if (!els.table) return;
     els.table.innerHTML = '';
-    list.forEach(u=>{
+    const users = Object.values(obj || {});
+    if (!users.length) {
       const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="3" class="pill">尚未建立用戶</td>`;
+      els.table.appendChild(tr);
+      return;
+    }
+    users.forEach(u=>{
+      const tr = document.createElement('tr');
+      const email = u.email || '(無)';
+      const role  = u.role  || 'client';
       tr.innerHTML = `
-        <td>${u.email || ''}</td>
+        <td>${email}</td>
+        <td>${role}</td>
         <td>
-          <select data-id="${u.id}" class="roleSel">
-            <option value="client"${(u.role==='client')?' selected':''}>client</option>
-            <option value="super"${(u.role!=='client')?' selected':''}>super</option>
-          </select>
-        </td>
-        <td>
-          <button class="btn danger" data-del="${u.id}">刪除</button>
+          <button class="btn danger" data-del="${u.id || ''}">刪除</button>
         </td>
       `;
       els.table.appendChild(tr);
     });
+  }
 
-    // bind role changes
-    els.table.querySelectorAll('.roleSel').forEach(sel=>{
-      sel.onchange = async ()=>{
-        const id = sel.getAttribute('data-id');
-        const role = sel.value;
-        if (window.rtdb) {
-          await rtdb.ref(`${usersPath}/${id}`).update({ role });
-        } else {
-          // no-op when no firebase
-        }
-      };
+  // Read once (or when re-entering the tab)
+  async function loadUsers(){
+    if (!guardFirebase()) return;
+    const snap = await rtdb.ref('/users').once('value');
+    renderUsers(snap.val() || {});
+  }
+
+  // Live updates (optional but nice): keep the table in sync while on the tab
+  let usersListenerOn = false;
+  function attachLiveListener(){
+    if (!guardFirebase() || usersListenerOn) return;
+    usersListenerOn = true;
+    rtdb.ref('/users').on('value', (snap)=> renderUsers(snap.val() || {}));
+  }
+  function detachLiveListener(){
+    if (!guardFirebase() || !usersListenerOn) return;
+    usersListenerOn = false;
+    rtdb.ref('/users').off();
+  }
+
+  // Create user (stores **email, password (plain), role, events:[]**)
+  async function createUser(){
+    if (!guardFirebase()) return;
+    const email = (els.email?.value || '').trim();
+    const pass  = (els.pass?.value  || '').trim();
+    const role  = (els.role?.value  || 'client');
+
+    if (!email || !pass) { alert('請輸入帳號與密碼'); return; }
+
+    // push-like id
+    const id = rtdb.ref('/users').push().key;
+    await rtdb.ref(`/users/${id}`).set({ id, email, password: pass, role, events: [] });
+
+    // clear inputs
+    if (els.email) els.email.value = '';
+    if (els.pass)  els.pass.value  = '';
+    if (els.role)  els.role.value  = 'client';
+
+    // refresh (render will also run by live listener if attached)
+    await loadUsers();
+    alert('✅ 已建立用戶');
+  }
+
+  // Delete user
+  document.addEventListener('click', async (evt)=>{
+    const btn = evt.target.closest('button[data-del]');
+    if (!btn) return;
+    if (!guardFirebase()) return;
+    const id = btn.getAttribute('data-del');
+    if (!id) return;
+    if (!confirm('確定刪除此用戶？')) return;
+    await rtdb.ref(`/users/${id}`).set(null);
+    // live listener updates table; also force refresh
+    await loadUsers();
+  });
+
+  // Wire the create button
+  if (els.btn) els.btn.addEventListener('click', createUser);
+
+  // Load users the first time this subpage becomes visible
+  // Your CMS left-nav uses .nav-item[data-target], so hook that:
+  const nav = document.getElementById('cmsNav');
+  if (nav) {
+    nav.addEventListener('click', (e)=>{
+      const b = e.target.closest('.nav-item');
+      if (!b) return;
+      const target = b.getAttribute('data-target');
+      if (target === 'pageUsers') {
+        loadUsers();
+        attachLiveListener();
+      } else {
+        // leaving the page — optional: stop listening
+        detachLiveListener();
+      }
     });
-
-    // bind deletes
-    els.table.querySelectorAll('button[data-del]').forEach(b=>{
-      b.onclick = async ()=>{
-        const id = b.getAttribute('data-del');
-        if (!confirm('確定刪除此用戶？')) return;
-        if (window.rtdb) {
-          await rtdb.ref(`${usersPath}/${id}`).remove();
-        } else {
-          // no-op when no firebase
-        }
-      };
-    });
   }
 
-  async function loadUsersOnce(){
-    if (window.rtdb) {
-      const snap = await rtdb.ref(usersPath).once('value');
-      renderUsers(snap.val() || {});
-    } else {
-      // local fallback listing (optional)
-      renderUsers({});
-    }
+  // If the page is already visible at load (rare), render once.
+  if (section.style.display !== 'none') {
+    loadUsers();
+    attachLiveListener();
   }
-
-  // live updates
-  if (window.rtdb) {
-    rtdb.ref(usersPath).on('value', (snap)=> renderUsers(snap.val() || {}));
-  }
-  loadUsersOnce();
-
-  els.btn.onclick = async ()=>{
-    const email = (els.email.value || '').trim();
-    const pass  = (els.pass.value  || '').trim();
-    const role  = els.role.value || 'client';
-    if (!email || !pass) return;
-
-    if (window.rtdb) {
-      const id = rtdb.ref(usersPath).push().key;
-      await rtdb.ref(`${usersPath}/${id}`).set({ id, email, password: pass, role, events: [] });
-    } else {
-      // no-op when no firebase
-    }
-    els.email.value = ''; els.pass.value = '';
-  };
 })();
