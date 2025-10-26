@@ -1,46 +1,50 @@
-// ===== LOGIN (local only) =====
-(function initLocalLogin(){
-  const USERS_KEY = 'ldraw-users-v1';       // local storage key for users
-  const AUTH_KEY  = 'ldraw-auth-v1';        // who is logged in
+// ===== LOGIN (Firebase-backed with local fallback) =====
+(function initLogin(){
+  // Local fallback keys
+  const USERS_KEY = 'ldraw-users-v1';
+  const AUTH_KEY  = 'ldraw-auth-v1';
 
-  // helpers
-  const getUsers = () => {
+  // Helpers (local)
+  const getLocalUsers = () => {
     try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
     catch { return []; }
   };
-  const saveUsers = (arr) => localStorage.setItem(USERS_KEY, JSON.stringify(arr));
+  const saveLocalUsers = (arr) => localStorage.setItem(USERS_KEY, JSON.stringify(arr));
   const setAuth  = (u)   => localStorage.setItem(AUTH_KEY, JSON.stringify(u || null));
-  const getAuth  = () => {
-    try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; }
-  };
+  const getAuth  = () => { try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; } };
 
-  // ensure a default admin/admin if none
-  (function ensureDefaultAdmin(){
-    let users = getUsers();
-    if (!Array.isArray(users) || users.length === 0 || !users.some(u => u.username === 'admin')) {
-      users = users.filter(Boolean);
-      users.push({ username:'admin', password:'admin', role:'admin', events:[] });
-      saveUsers(users);
+  const hasFirebase = !!(window.rtdb && window.firebase);
+  const usersPath   = '/users'; // { id, email, password, role, events?[] }
+
+  // Ensure a default admin if no users exist (FB or local)
+  async function ensureDefaultAdmin(){
+    if (hasFirebase) {
+      const snap = await rtdb.ref(usersPath).once('value');
+      const obj = snap.val() || {};
+      const any = Object.values(obj).some(u => u && u.email);
+      if (!any) {
+        const id = rtdb.ref(usersPath).push().key;
+        await rtdb.ref(`${usersPath}/${id}`).set({
+          id, email:'admin', password:'admin', role:'super', events:[]
+        });
+      }
+    } else {
+      let users = getLocalUsers();
+      if (!Array.isArray(users) || users.length === 0 || !users.some(u => u && u.username === 'admin')) {
+        users = users.filter(Boolean);
+        users.push({ username:'admin', password:'admin', role:'super', events:[] });
+        saveLocalUsers(users);
+      }
     }
-  })();
+  }
 
-  // DOM
-  const gate   = document.getElementById('loginGate');
-  const form   = document.getElementById('loginForm');
-  const uEl    = document.getElementById('loginUser');
-  const pEl    = document.getElementById('loginPass');
-  const btn    = document.getElementById('btnLogin');
-
-  // guard: if any of these are missing, do nothing (won't break the app)
-  if (!gate || !form || !uEl || !pEl || !btn) return;
-
+  // UI role application (unchanged)
   function applyRoleUI(role){
-    // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
     const navItems = document.querySelectorAll('#cmsNav .nav-item');
     navItems.forEach(item => {
       const target = item.getAttribute('data-target');
       if (role === 'client') {
-        const visible = (target === 'pageRoster');  // only 名單
+        const visible = (target === 'pageRoster');  // clients: roster only
         item.style.display = visible ? '' : 'none';
         if (!visible) {
           const sec = document.getElementById(target);
@@ -63,23 +67,41 @@
     }
   }
 
-  function login(username, password){
-    const users = getUsers();
-    const u = users.find(x => x && x.username === username && x.password === password);
-    if (!u) return false;
-    setAuth({ username:u.username, role:u.role, events:u.events || [] });
-    applyRoleUI(u.role || 'admin');
-    gate.classList.remove('show');
-    gate.style.display = 'none';
-    if (typeof renderAll === 'function') renderAll();
-    return true;
+  // Credentials check (FB or local)
+  async function checkLogin(user, pass){
+    if (hasFirebase) {
+      const snap = await rtdb.ref(usersPath).once('value');
+      const obj = snap.val() || {};
+      const all = Object.values(obj);
+      const found = all.find(u => (u.email || '') === user && (u.password || '') === pass);
+      if (!found) return null;
+      return { username: found.email, role: found.role || 'client', events: found.events || [], _id: found.id };
+    } else {
+      const users = getLocalUsers();
+      const u = users.find(x => x && (x.username === user || x.email === user) && x.password === pass);
+      if (!u) return null;
+      return { username: u.username || u.email, role: u.role || 'super', events: u.events || [] };
+    }
   }
 
-  // auto-restore session
-  (function restoreSession(){
+  // DOM
+  const gate   = document.getElementById('loginGate');
+  const form   = document.getElementById('loginForm');
+  const uEl    = document.getElementById('loginUser');
+  const pEl    = document.getElementById('loginPass');
+  const btn    = document.getElementById('btnLogin');
+
+  // If page has no login gate (e.g. public page), bail
+  if (!gate || !form || !uEl || !pEl || !btn) return;
+
+  // Boot
+  (async function boot(){
+    await ensureDefaultAdmin();
+
+    // restore session if any
     const me = getAuth();
     if (me && me.username) {
-      applyRoleUI(me.role || 'admin');
+      applyRoleUI(me.role || 'super');
       gate.classList.remove('show');
       gate.style.display = 'none';
       return;
@@ -88,14 +110,21 @@
     gate.style.display = 'flex';
   })();
 
-  // handle submit (click or Enter)
-  form.addEventListener('submit', (e)=>{
+  form.addEventListener('submit', async (e)=>{
     e.preventDefault();
-    const ok = login((uEl.value||'').trim(), (pEl.value||'').trim());
-    if (!ok) {
+    btn.disabled = true; btn.textContent = '登入中…';
+    const cred = await checkLogin((uEl.value||'').trim(), (pEl.value||'').trim());
+    if (!cred) {
       btn.disabled = false;
       btn.textContent = '登入失敗，重試';
       setTimeout(()=> btn.textContent = '登入', 1200);
+      return;
     }
+    setAuth(cred);
+    applyRoleUI(cred.role || 'super');
+    gate.classList.remove('show');
+    gate.style.display = 'none';
+    if (typeof renderAll === 'function') renderAll();
   });
 })();
+// ===== END LOGIN =====

@@ -2238,3 +2238,100 @@ function renderAll(){
 
   if(!document.querySelector('.nav-item.active')) setActivePage('pageEvent');
 }
+
+/* ==== Users Management (Firebase RTDB) ==== */
+(function initUsersPage(){
+  if (!(window.rtdb && window.firebase)) {
+    console.warn('[Users] Firebase not configured — user management will fall back to local login only.');
+  }
+
+  const els = {
+    email: document.getElementById('newUserEmail'),
+    pass:  document.getElementById('newUserPassword'),
+    role:  document.getElementById('newUserRole'),
+    btn:   document.getElementById('createUser'),
+    table: document.getElementById('userTable'),
+  };
+
+  if (!els.email || !els.pass || !els.role || !els.btn || !els.table) return;
+
+  const usersPath = '/users';
+
+  function renderUsers(obj){
+    const list = Object.values(obj || {});
+    els.table.innerHTML = '';
+    list.forEach(u=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${u.email || ''}</td>
+        <td>
+          <select data-id="${u.id}" class="roleSel">
+            <option value="client"${(u.role==='client')?' selected':''}>client</option>
+            <option value="super"${(u.role!=='client')?' selected':''}>super</option>
+          </select>
+        </td>
+        <td>
+          <button class="btn danger" data-del="${u.id}">刪除</button>
+        </td>
+      `;
+      els.table.appendChild(tr);
+    });
+
+    // bind role changes
+    els.table.querySelectorAll('.roleSel').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const id = sel.getAttribute('data-id');
+        const role = sel.value;
+        if (window.rtdb) {
+          await rtdb.ref(`${usersPath}/${id}`).update({ role });
+        } else {
+          // no-op when no firebase
+        }
+      };
+    });
+
+    // bind deletes
+    els.table.querySelectorAll('button[data-del]').forEach(b=>{
+      b.onclick = async ()=>{
+        const id = b.getAttribute('data-del');
+        if (!confirm('確定刪除此用戶？')) return;
+        if (window.rtdb) {
+          await rtdb.ref(`${usersPath}/${id}`).remove();
+        } else {
+          // no-op when no firebase
+        }
+      };
+    });
+  }
+
+  async function loadUsersOnce(){
+    if (window.rtdb) {
+      const snap = await rtdb.ref(usersPath).once('value');
+      renderUsers(snap.val() || {});
+    } else {
+      // local fallback listing (optional)
+      renderUsers({});
+    }
+  }
+
+  // live updates
+  if (window.rtdb) {
+    rtdb.ref(usersPath).on('value', (snap)=> renderUsers(snap.val() || {}));
+  }
+  loadUsersOnce();
+
+  els.btn.onclick = async ()=>{
+    const email = (els.email.value || '').trim();
+    const pass  = (els.pass.value  || '').trim();
+    const role  = els.role.value || 'client';
+    if (!email || !pass) return;
+
+    if (window.rtdb) {
+      const id = rtdb.ref(usersPath).push().key;
+      await rtdb.ref(`${usersPath}/${id}`).set({ id, email, password: pass, role, events: [] });
+    } else {
+      // no-op when no firebase
+    }
+    els.email.value = ''; els.pass.value = '';
+  };
+})();

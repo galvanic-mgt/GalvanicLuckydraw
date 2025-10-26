@@ -8,6 +8,19 @@
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <!-- === Login Gate (shows until signed in) === -->
+  <div id="loginGate" class="overlay" style="display:none; align-items:center; justify-content:center; backdrop-filter:blur(2px)">
+    <form id="loginForm" class="card" style="min-width:320px; max-width:420px; padding:16px">
+      <h3 style="margin:0 0 8px">登入系統</h3>
+      <div class="bar" style="flex-direction:column; gap:8px">
+        <input id="loginUser" placeholder="帳號 / Email" autofocus />
+        <input id="loginPass" type="password" placeholder="密碼" />
+        <button id="btnLogin" class="btn primary" type="submit">登入</button>
+      </div>
+      <p class="pill" style="margin-top:8px">提示：預設帳密為 <strong>admin / admin</strong>（可在「用戶管理」建立新用戶）</p>
+    </form>
+  </div>
+  <!-- === END Login Gate === -->
   <header>
     <div class="container row">
       <div class="tabs">
@@ -441,8 +454,29 @@
   <!-- SheetJS (XLSX) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+  <!-- Firebase SDKs (Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Initialize Firebase (fill in your project config) -->
+  <script>
+    // TODO: replace with your own config from Firebase Console
+    const firebaseConfig = {
+      apiKey: "AIzaSyDe_LfpjcAC5bdeiOAafUaen7gJAQDF1hg",
+      authDomain: "luckydrawpolls.firebaseapp.com",
+      databaseURL: "https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "luckydrawpolls",
+      storageBucket: "luckydrawpolls.firebasestorage.app",
+      messagingSenderId: "1027454770775",
+      appId: "1:1027454770775:web:8967887edba3695a43cd12"
+    };
+    window.fbApp = firebase.initializeApp(firebaseConfig);
+    window.rtdb  = firebase.database();
+  </script>
+
   <script src="./app.js"></script>
   <script src="./login.js"></script>
+
 
 </body>
 </html>
