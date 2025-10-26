@@ -90,6 +90,8 @@
   const uEl    = document.getElementById('loginUser');
   const pEl    = document.getElementById('loginPass');
   const btn    = document.getElementById('btnLogin');
+  const btnLogout = document.getElementById('btnLogout');
+
 
   // If page has no login gate (e.g. public page), bail
   if (!gate || !form || !uEl || !pEl || !btn) return;
@@ -109,6 +111,21 @@
     gate.classList.add('show');
     gate.style.display = 'flex';
   })();
+
+    if (btnLogout) {
+      btnLogout.addEventListener('click', () => {
+        // clear local session
+        try { localStorage.setItem('ldraw-auth-v1', JSON.stringify(null)); } catch {}
+
+        // show the login gate
+        gate.classList.add('show');
+        gate.style.display = 'flex';
+
+        // hide CMS subpages until login again
+        document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
+        document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
+      });
+    }
 
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();

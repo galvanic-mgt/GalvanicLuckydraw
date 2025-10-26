@@ -2185,46 +2185,6 @@ try{
 
 }catch{}
 
-// === Firebase User Management (basic) ===
-const FB_AUTH = {
-  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app',
-  usersPath: '/users'
-};
-
-async function loadUsers(){
-  const list = await FB.get(FB_AUTH.usersPath) || {};
-  const tbody = document.getElementById('userTable');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  Object.entries(list).forEach(([id, u])=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${u.email}</td><td>${u.role}</td>
-    <td><button class="btn danger" data-id="${id}">刪除</button></td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-document.getElementById('createUser')?.addEventListener('click', async ()=>{
-  const email = document.getElementById('newUserEmail').value.trim();
-  const password = document.getElementById('newUserPassword').value.trim();
-  const role = document.getElementById('newUserRole').value;
-  if(!email || !password) return alert('請輸入帳號與密碼');
-  const id = btoa(email).replace(/=/g,'');
-  await FB.patch(`${FB_AUTH.usersPath}/${id}`, { email, role });
-  alert('已建立用戶');
-  loadUsers();
-});
-
-document.addEventListener('click', async e=>{
-  const btn = e.target.closest('button[data-id]');
-  if(!btn) return;
-  const id = btn.dataset.id;
-  if(!confirm('確定刪除此用戶？')) return;
-  await FB.put(`${FB_AUTH.usersPath}/${id}`, null);
-  loadUsers();
-});
-
-
 function renderAll(){
   renderBG(); renderLogo(); renderBanner();
   renderPrizes(); /* renderTiles(); */ renderRosterList(); rebuildPagesSelect();
