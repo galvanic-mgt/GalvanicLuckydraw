@@ -67,6 +67,42 @@
     }
   }
 
+  function restrictClientEvents(){
+  const me = getAuth && getAuth();
+  const allowed = (me && Array.isArray(me.events)) ? me.events : [];
+  const list = document.querySelector('.event-list'); // container
+  const items = document.querySelectorAll('.event-item'); // each event row
+
+  // Hide any event the client is not allowed to see
+  items.forEach(el=>{
+    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
+    el.style.display = (!allowed.length || allowed.includes(id)) ? '' : 'none';
+  });
+
+  // If the current selection is hidden, switch to first allowed event (if any)
+  const active = document.querySelector('.event-item.active');
+  if (active && active.style.display === 'none') {
+    const firstAllowed = Array.from(items).find(el => el.style.display !== 'none');
+    if (firstAllowed) firstAllowed.click();
+  }
+
+  // Prevent clicks on disallowed events
+  list?.addEventListener('click', (e)=>{
+    const el = e.target.closest('.event-item');
+    if (!el) return;
+    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
+    if (allowed.length && !allowed.includes(id)) {
+      e.stopPropagation();
+      e.preventDefault();
+      alert('此帳號無權限訪問該活動');
+    }
+  }, { once:true });
+
+  // Re-apply if the list is dynamically rebuilt later
+  const mo = new MutationObserver(()=> restrictClientEvents());
+  if (list) mo.observe(list, { childList:true, subtree:true });
+}
+
   // Credentials check (FB or local)
   async function checkLogin(user, pass){
     if (hasFirebase) {
@@ -104,10 +140,12 @@
     const me = getAuth();
     if (me && me.username) {
       applyRoleUI(me.role || 'super');
+      if ((me.role || 'super') === 'client') restrictClientEvents();
       gate.classList.remove('show');
       gate.style.display = 'none';
       return;
     }
+
     gate.classList.add('show');
     gate.style.display = 'flex';
   })();
@@ -139,6 +177,7 @@
     }
     setAuth(cred);
     applyRoleUI(cred.role || 'super');
+    if ((cred.role || 'super') === 'client') restrictClientEvents();
     gate.classList.remove('show');
     gate.style.display = 'none';
     if (typeof renderAll === 'function') renderAll();

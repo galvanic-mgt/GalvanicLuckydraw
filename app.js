@@ -2229,30 +2229,32 @@ function renderAll(){
   }
 
   // Render the table rows from a /users snapshot object
-  function renderUsers(obj){
-    if (!els.table) return;
-    els.table.innerHTML = '';
-    const users = Object.values(obj || {});
-    if (!users.length) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="3" class="pill">尚未建立用戶</td>`;
-      els.table.appendChild(tr);
-      return;
+    function renderUsers(obj){
+      if (!els.table) return;
+      els.table.innerHTML = '';
+      const users = Object.values(obj || {});
+      if (users.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="4" class="pill">尚未建立用戶</td>`;
+        els.table.appendChild(tr);
+        return;
+      }
+      users.forEach(u=>{
+        const eventsStr = Array.isArray(u.events) ? u.events.join(',') : '';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.email || ''}</td>
+          <td>${u.role  || 'client'}</td>
+          <td>
+            <div class="bar" style="gap:6px; align-items:center">
+              <span class="pill" data-evlist="${u.id || ''}">${eventsStr || '(未設定)'}</span>
+              <button class="btn" data-edit-events="${u.id || ''}">編輯授權</button>
+            </div>
+          </td>
+          <td><button class="btn danger" data-del="${u.id||''}">刪除</button></td>`;
+        els.table.appendChild(tr);
+      });
     }
-    users.forEach(u=>{
-      const tr = document.createElement('tr');
-      const email = u.email || '(無)';
-      const role  = u.role  || 'client';
-      tr.innerHTML = `
-        <td>${email}</td>
-        <td>${role}</td>
-        <td>
-          <button class="btn danger" data-del="${u.id || ''}">刪除</button>
-        </td>
-      `;
-      els.table.appendChild(tr);
-    });
-  }
 
   // Read once (or when re-entering the tab)
   async function loadUsers(){
@@ -2272,6 +2274,15 @@ function renderAll(){
     if (!guardFirebase() || !usersListenerOn) return;
     usersListenerOn = false;
     rtdb.ref('/users').off();
+  }
+  // Helper: return a list of event IDs currently in the sidebar DOM (fallback to [])
+  function getAllEventIdsFromUI(){
+    const ids = [];
+    document.querySelectorAll('.event-item').forEach(item=>{
+      const id = item.getAttribute('data-id') || item.dataset.id || item.dataset.eid || '';
+      if (id && !ids.includes(id)) ids.push(id);
+    });
+    return ids;
   }
 
   // Create user (stores **email, password (plain), role, events:[]**)
@@ -2309,6 +2320,38 @@ function renderAll(){
     // live listener updates table; also force refresh
     await loadUsers();
   });
+
+  // Edit per-user allowed events
+document.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button[data-edit-events]');
+  if (!btn) return;
+  if (!guardFirebase()) return;
+
+  const id = btn.getAttribute('data-edit-events');
+  if (!id) return;
+
+  // Read current user
+  const snap = await rtdb.ref(`/users/${id}`).once('value');
+  const user = snap.val() || {};
+  const current = Array.isArray(user.events) ? user.events : [];
+
+  // Build a hint string of available event IDs from the sidebar DOM
+  const available = getAllEventIdsFromUI();
+  const hint = available.length ? `（可用：${available.join(', ')}）` : '';
+
+  // Prompt for comma-separated event IDs
+  const nextStr = prompt(`輸入此用戶可訪問的活動ID（逗號分隔）${hint}`, current.join(','));
+  if (nextStr === null) return; // cancelled
+
+  const next = nextStr.split(',')
+    .map(s=>s.trim())
+    .filter(Boolean);
+
+  await rtdb.ref(`/users/${id}/events`).set(next);
+  // Update the visible text
+  const pill = document.querySelector(`[data-evlist="${id}"]`);
+  if (pill) pill.textContent = next.length ? next.join(',') : '(未設定)';
+});
 
   // Wire the create button
   if (els.btn) els.btn.addEventListener('click', createUser);
