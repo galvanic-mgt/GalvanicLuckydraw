@@ -555,6 +555,11 @@ function renderBatchTargets(targetGrid){
     targetGrid.appendChild(card);
   });
 }
+// --- role helper (block client from event mgmt even if they unhide UI) ---
+function _isClient(){
+  try { const a = JSON.parse(localStorage.getItem('ldraw-auth-v1')); return a && a.role === 'client'; }
+  catch { return false; }
+}
 
 function updatePublicPanel(){
   const p = currentPrize();
@@ -1038,6 +1043,17 @@ confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 
   // sidebar + events
   eventList=$('eventList'); newEventName=$('newEventName'); newClientName=$('newClientName'); addEventBtn=$('addEvent');
+  // Clients cannot create events
+try {
+  const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
+  if (me && me.role === 'client' && addEventBtn) {
+    addEventBtn.disabled = true;
+    addEventBtn.title = '此帳號無權限建立活動';
+    const sbForm = document.querySelector('.sidebar-form');
+    if (sbForm) sbForm.style.display = 'none';
+  }
+} catch {}
+
   evTitle=$('evTitle'); evClient=$('evClient'); evDateTime=$('evDateTime'); evVenue=$('evVenue'); evAddress=$('evAddress'); evMapUrl=$('evMapUrl'); evBus=$('evBus'); evTrain=$('evTrain'); evParking=$('evParking'); evNotes=$('evNotes');
   currentEventName=$('currentEventName'); currentClient=$('currentClient'); currentIdLabel=$('currentIdLabel');
 
@@ -1451,23 +1467,58 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
 
 function renderEventList(){
   eventList.innerHTML='';
-  store.list()
-    .filter(it => it.listed) // only show events marked to list
-    .forEach(({id,name,client})=>{
-      const item=document.createElement('div');
-      item.className='event-item'+(id===store.current().id?' active':'');
-      item.innerHTML =
-        `<div class="event-name">${name||'（未命名）'}</div>`+
-        `<div class="event-meta">客戶：${client||'—'}</div>`+
-        `<div class="event-meta">ID: ${id}</div>`;
-      item.onclick=()=>{ if(id===store.current().id) return;
-        if(confirm('切換至另一活動？未儲存的修改將遺失。')){
-          store.switch(id); state=store.load(); renderAll();
-        }
-      };
-      eventList.appendChild(item);
-    });
+
+  // Who is logged in? (local session written by login.js)
+  let isClient = false, allowed = null;
+  try {
+    const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
+    isClient = !!(me && me.role === 'client');
+    allowed = Array.isArray(me && me.events) ? me.events : null;  // e.g. ["gala2025","jp-oct-show"]
+  } catch {}
+
+  // Build the visible list (clients see only allowed events)
+  const visible = store.list()
+    .filter(it => it.listed)
+    .filter(it => !isClient || !allowed || allowed.length === 0 || allowed.includes(it.id));
+
+  // Render the list
+  visible.forEach(({id,name,client})=>{
+    const item=document.createElement('div');
+    item.className='event-item'+(id===store.current().id?' active':'');
+    item.innerHTML =
+      `<div class="event-name">${name||'（未命名）'}</div>`+
+      `<div class="event-meta">客戶：${client||'—'}</div>`+
+      `<div class="event-meta">ID: ${id}</div>`;
+    item.onclick=()=>{
+      // safety: even if the element is somehow shown, block disallowed switch
+      if (isClient && allowed && allowed.length && !allowed.includes(id)) {
+        alert('此帳號無權限訪問該活動');
+        return;
+      }
+      if(id===store.current().id) return;
+      if(confirm('切換至另一活動？未儲存的修改將遺失。')){
+        store.switch(id);
+        state = store.load();
+        renderAll();
+      }
+    };
+    eventList.appendChild(item);
+  });
+
+  // If client and current event is not allowed, auto-switch to first allowed (if any)
+  if (isClient && allowed && allowed.length) {
+    const cur = store.current();
+    if (!cur || !allowed.includes(cur.id)) {
+      const first = visible[0];
+      if (first) {
+        store.switch(first.id);
+        state = store.load();
+        renderAll();
+      }
+    }
+  }
 }
+
 
     function renderRerollList(){
   const tbody = document.getElementById('rerollRows');
@@ -2379,4 +2430,6 @@ document.addEventListener('click', async (e)=>{
     loadUsers();
     attachLiveListener();
   }
+
+  
 })();

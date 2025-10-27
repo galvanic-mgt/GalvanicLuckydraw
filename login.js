@@ -38,19 +38,15 @@
     }
   }
 
-  // UI role application (unchanged)
-  function applyRoleUI(role){
-  // tag the body for CSS locks
-  document.body.classList.toggle('client-mode', role === 'client');
-
-  // Left CMS nav: only show 名單 for client, all tabs for super
+function applyRoleUI(role){
+  // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
   const navItems = document.querySelectorAll('#cmsNav .nav-item');
   navItems.forEach(item => {
     const target = item.getAttribute('data-target');
     if (role === 'client') {
-      const allow = (target === 'pageRoster');   // ONLY roster tab
-      item.style.display = allow ? '' : 'none';
-      if (!allow) {
+      const visible = (target === 'pageRoster');  // only 名單
+      item.style.display = visible ? '' : 'none';
+      if (!visible) {
         const sec = document.getElementById(target);
         if (sec) sec.style.display = 'none';
       }
@@ -59,52 +55,22 @@
     }
   });
 
-  function restrictClientEvents(){
-  const getAuthSafe = (typeof getAuth === 'function') ? getAuth : ()=>null;
-  const me = getAuthSafe && getAuthSafe();
-  const allowed = (me && Array.isArray(me.events)) ? me.events : [];
+  // Hide "+ 新活動" form on the left sidebar for clients, but keep 活動清單 visible
+  const sbForm = document.querySelector('.sidebar-form');
+  if (sbForm) sbForm.style.display = (role === 'client') ? 'none' : '';
 
-  const list = document.querySelector('.event-list');    // sidebar container
-  const items = document.querySelectorAll('.event-item'); // each event row
-
-  // Hide any event the client is not allowed to see
-  items.forEach(el=>{
-    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
-    el.style.display = (!allowed.length || allowed.includes(id)) ? '' : 'none';
-  });
-
-  // If current selection becomes hidden, jump to first allowed
-  const active = document.querySelector('.event-item.active');
-  if (active && active.style.display === 'none') {
-    const firstAllowed = Array.from(items).find(el => el.style.display !== 'none');
-    if (firstAllowed) firstAllowed.click();
-  }
-
-  // Block clicks on disallowed events
-  list?.addEventListener('click', (e)=>{
-    const el = e.target.closest('.event-item');
-    if (!el) return;
-    const id = el.getAttribute('data-id') || el.dataset.id || el.dataset.eid || '';
-    if (allowed.length && !allowed.includes(id)) {
-      e.stopPropagation();
-      e.preventDefault();
-      alert('此帳號無權限訪問該活動');
-    }
-  }, { once:true });
-}
-
-  // If client, force-select Roster tab
   if (role === 'client') {
+    document.getElementById('cmsView')?.setAttribute('style','');
     const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
     if (rosterBtn) {
       document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
       rosterBtn.classList.add('active');
       document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
-      const rosterPage = document.getElementById('pageRoster');
-      if (rosterPage) rosterPage.style.display = 'block';
+      document.getElementById('pageRoster').style.display = 'block';
     }
   }
 }
+
 
 
   function restrictClientEvents(){
