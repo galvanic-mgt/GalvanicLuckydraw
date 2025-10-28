@@ -45,16 +45,29 @@ function cloneCurrentEvent(newName){
   const all = JSON.parse(localStorage.getItem('ldraw-events-v3')) || { currentId:null, events:{} };
   const curData = all.events[curMeta.id]?.data || baseState();
   const newId = genId();
-  all.events[newId] = {
-    name: newName || (curMeta.name + '（副本）'),
+
+  const meta = {
+    name:   newName || (curMeta.name + '（副本）'),
     client: curMeta.client || '',
-    listed: (all.events[curMeta.id]?.listed !== false),
-    data: deepClone(curData)
+    listed: (all.events[curMeta.id]?.listed !== false)
   };
+
+  // write locally (keeps existing callers/UI flow intact)
+  all.events[newId] = { ...meta, data: deepClone(curData) };
   all.currentId = newId;
   localStorage.setItem('ldraw-events-v3', JSON.stringify(all));
-  return newId;
+
+  // fire-and-forget: write to Firebase in background (no await)
+  try {
+    if (typeof CLOUD !== 'undefined') {
+      CLOUD.writeMeta(newId, meta).catch(()=>{});
+      CLOUD.writeData(newId, all.events[newId].data).catch(()=>{});
+    }
+  } catch {}
+
+  return newId; // still synchronous
 }
+
 
 // ===== Firebase (REST) tiny wrapper =====
 const FB = {
@@ -64,6 +77,32 @@ const FB = {
   patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
 };
 
+// ---- Cloud index + helpers (events metadata + per-event state) ----
+const CLOUD = {
+  // Meta list lives under /eventsIndex/{id} -> { name, client, listed }
+  async listEvents() {
+    const map = await FB.get(`/eventsIndex`) || {};
+    return Object.entries(map).map(([id, meta]) => ({
+      id, name: meta?.name || '（未命名）',
+      client: meta?.client || '', listed: meta?.listed !== false
+    }));
+  },
+  async writeMeta(id, meta) {
+    await FB.patch(`/eventsIndex/${id}`, {
+      name: meta.name || '（未命名）',
+      client: meta.client || '',
+      listed: meta.listed !== false
+    });
+  },
+  async writeData(id, data) {
+    // Whole event state under /events/{id}/data
+    await FB.put(`/events/${id}/data`, data);
+  },
+  async readData(id) {
+    const data = await FB.get(`/events/${id}/data`);
+    return data || null;
+  }
+};
 
 function rebuildRemainingFromPeople(){
   const winnersSet = new Set(state.winners.map(w => `${w.name}||${w.dept||''}`));
@@ -110,8 +149,32 @@ const store={
 },
 
   current(){ const all=loadAll(); const meta=all.events[all.currentId]||{name:'',client:''}; return {id:all.currentId,name:meta.name,client:meta.client}; },
-  switch(id){ const all=loadAll(); if(all.events[id]){ all.currentId=id; saveAll(all); return true;} return false; },
-  create(name, client){
+  switch(id){
+    const all = loadAll();
+    if (!all.events[id]) return false;
+
+    // set current locally (keeps existing callers working)
+    all.currentId = id;
+    saveAll(all);
+
+    // background: pull latest from cloud into local cache (non-blocking)
+    try {
+      CLOUD.readData(id).then(cloud=>{
+        if (!cloud) return;
+        const all2 = loadAll();
+        if (all2.events[id]) {
+          all2.events[id].data = cloud;
+          saveAll(all2);
+          // optional: re-render when cloud state arrives
+          if (typeof renderAll === 'function') renderAll();
+        }
+      }).catch(()=>{});
+    } catch {}
+
+    return true;
+  },
+
+create(name, client){
     const all = loadAll();
     const id = genId();
     all.events[id] = {
@@ -122,7 +185,21 @@ const store={
     };
     all.currentId = id; saveAll(all); return id;
   },
-  renameCurrent(name,client){ const all=loadAll(); if(all.events[all.currentId]){ if(name) all.events[all.currentId].name=name; if(client!==undefined) all.events[all.currentId].client=client; saveAll(all);} }
+
+renameCurrent(name, client){
+  const all = loadAll();
+  const id = all.currentId;
+  if (all.events[id]) {
+    if (name) all.events[id].name = name;
+    if (client !== undefined) all.events[id].client = client;
+    saveAll(all);
+    CLOUD.writeMeta(id, {
+      name: all.events[id].name,
+      client: all.events[id].client,
+      listed: all.events[id].listed !== false
+    }).catch(()=>{});
+  }
+}
 };
 
 // ===== Sync layer (same-device, multi-tab/window) =====
@@ -141,9 +218,17 @@ function broadcastCelebrate(){
 const _storeSave = store.save.bind(store);
 let _lastBC = 0;
 store.save = (s)=>{
-  _storeSave(s);
+  _storeSave(s);  // keep local cache for existing synchronous code
+
+  // write-through to cloud (fire-and-forget; UI stays snappy)
+  try {
+    const cur = store.current();
+    if (cur && cur.id) CLOUD.writeData(cur.id, s);
+  } catch {}
+
+  // broadcast to other tabs (same device)
   const now = Date.now();
-  if (now - _lastBC > 200) {   // broadcast at most ~5 times/sec
+  if (now - _lastBC > 200) {
     _lastBC = now;
     broadcastTick('store.save');
   }
@@ -1466,38 +1551,65 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
 });
 
 function renderEventList(){
-  eventList.innerHTML='';
 
-  // Who is logged in? (local session written by login.js)
-  let isClient = false, allowed = null;
+    // --- CLOUD→LOCAL refresh (non-blocking, no async/await, keeps your render code unchanged)
+  if (!renderEventList._cloudHooked) {
+    renderEventList._cloudHooked = true;
+    try {
+      CLOUD.listEvents().then(function(cloudList){
+        cloudList = Array.isArray(cloudList) ? cloudList : [];
+        // merge cloud meta into local cache then repaint via your own function
+        var all = loadAll(); all.events = all.events || {};
+        cloudList.forEach(function(m){
+          if (!all.events[m.id]) {
+            all.events[m.id] = { name:m.name, client:m.client, listed:m.listed, data: baseState() };
+          } else {
+            all.events[m.id].name   = m.name;
+            all.events[m.id].client = m.client;
+            all.events[m.id].listed = (m.listed!==false);
+          }
+        });
+        saveAll(all);
+        // repaint using your existing local-based renderer
+        setTimeout(function(){ try{ renderEventList(); }catch(e){} }, 0);
+      }).catch(function(){});
+    } catch(e){}
+  }
+
+  if (!eventList) return;
+  eventList.innerHTML = '載入中…';
+
+  // who is logged in? (written by login.js)
+  var isClient = false, allowed = null;
   try {
-    const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
+    var me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
     isClient = !!(me && me.role === 'client');
-    allowed = Array.isArray(me && me.events) ? me.events : null;  // e.g. ["gala2025","jp-oct-show"]
-  } catch {}
+    allowed = Array.isArray(me && me.events) ? me.events : null;
+  } catch(e){}
 
-  // Build the visible list (clients see only allowed events)
-  const visible = store.list()
-    .filter(it => it.listed)
-    .filter(it => !isClient || !allowed || allowed.length === 0 || allowed.includes(it.id));
-
-  // Render the list
-  visible.forEach(({id,name,client})=>{
-    const item=document.createElement('div');
-    item.className='event-item'+(id===store.current().id?' active':'');
+  // 1) show what we have locally right away (keeps UI snappy)
+  var localList = store.list().filter(function(it){ return it.listed; });
+  // apply client filter to local paint too
+  if (isClient && allowed && allowed.length) {
+    localList = localList.filter(function(it){ return allowed.indexOf(it.id) !== -1; });
+  }
+  eventList.innerHTML = '';
+  localList.forEach(function(it){
+    var item = document.createElement('div');
+    item.className = 'event-item' + (it.id === store.current().id ? ' active' : '');
+    item.setAttribute('data-id', it.id);
     item.innerHTML =
-      `<div class="event-name">${name||'（未命名）'}</div>`+
-      `<div class="event-meta">客戶：${client||'—'}</div>`+
-      `<div class="event-meta">ID: ${id}</div>`;
-    item.onclick=()=>{
-      // safety: even if the element is somehow shown, block disallowed switch
-      if (isClient && allowed && allowed.length && !allowed.includes(id)) {
-        alert('此帳號無權限訪問該活動');
-        return;
+      '<div class="event-name">' + (it.name || '（未命名）') + '</div>' +
+      '<div class="event-meta">客戶：' + (it.client || '—') + '</div>' +
+      '<div class="event-meta">ID: ' + it.id + '</div>';
+    item.onclick = function(){
+      if (isClient && allowed && allowed.length && allowed.indexOf(it.id) === -1) {
+        alert('此帳號無權限訪問該活動'); return;
       }
-      if(id===store.current().id) return;
-      if(confirm('切換至另一活動？未儲存的修改將遺失。')){
-        store.switch(id);
+      if (it.id === store.current().id) return;
+      if (confirm('切換至另一活動？未儲存的修改將遺失。')) {
+        // keep synchronous behavior
+        store.switch(it.id);
         state = store.load();
         renderAll();
       }
@@ -1505,19 +1617,55 @@ function renderEventList(){
     eventList.appendChild(item);
   });
 
-  // If client and current event is not allowed, auto-switch to first allowed (if any)
-  if (isClient && allowed && allowed.length) {
-    const cur = store.current();
-    if (!cur || !allowed.includes(cur.id)) {
-      const first = visible[0];
-      if (first) {
-        store.switch(first.id);
-        state = store.load();
-        renderAll();
+  // 2) background refresh from cloud, repaint when it arrives
+  if (typeof CLOUD !== 'undefined' && CLOUD.listEvents) {
+    CLOUD.listEvents().then(function(allCloud){
+      if (!Array.isArray(allCloud)) allCloud = [];
+      // client filter
+      if (isClient && allowed && allowed.length) {
+        allCloud = allCloud.filter(function(it){ return allowed.indexOf(it.id) !== -1; });
+      } else {
+        allCloud = allCloud.filter(function(it){ return it.listed; });
       }
-    }
+
+      // if nothing changed, we can skip repaint; otherwise repaint from cloud
+      eventList.innerHTML = '';
+      allCloud.forEach(function(it){
+        var item = document.createElement('div');
+        item.className = 'event-item' + (it.id === store.current().id ? ' active' : '');
+        item.setAttribute('data-id', it.id);
+        item.innerHTML =
+          '<div class="event-name">' + (it.name || '（未命名）') + '</div>' +
+          '<div class="event-meta">客戶：' + (it.client || '—') + '</div>' +
+          '<div class="event-meta">ID: ' + it.id + '</div>';
+        item.onclick = function(){
+          if (isClient && allowed && allowed.length && allowed.indexOf(it.id) === -1) {
+            alert('此帳號無權限訪問該活動'); return;
+          }
+          if (it.id === store.current().id) return;
+          if (confirm('切換至另一活動？未儲存的修改將遺失。')) {
+            store.switch(it.id);      // still sync
+            state = store.load();     // sync
+            renderAll();
+          }
+        };
+        eventList.appendChild(item);
+      });
+
+      // If client’s current event is not allowed anymore, auto-jump to first allowed
+      if (isClient && allowed && allowed.length) {
+        var cur = store.current();
+        var ok = allCloud.some(function(e){ return e.id === cur.id; });
+        if (!ok && allCloud[0]) {
+          store.switch(allCloud[0].id);
+          state = store.load();
+          renderAll();
+        }
+      }
+    }).catch(function(){ /* ignore cloud errors for now */ });
   }
 }
+
 
 
     function renderRerollList(){
@@ -1802,6 +1950,39 @@ document.addEventListener('click', e=>{
 
 
     function renderEventsTable(){
+        // --- CLOUD→LOCAL refresh for the 管理 table (non-blocking)
+    // --- CLOUD→LOCAL refresh for the 管理 table (non-blocking; stays sync)
+  if (!renderEventsTable._cloudRefreshing && typeof CLOUD !== 'undefined' && CLOUD.listEvents) {
+    renderEventsTable._cloudRefreshing = true;
+    try {
+      CLOUD.listEvents().then(function(cloudList){
+        cloudList = Array.isArray(cloudList) ? cloudList : [];
+
+        // Merge cloud meta into local cache that your table already reads from
+        var all = loadAll(); all.events = all.events || {};
+        cloudList.forEach(function(m){
+          if (!all.events[m.id]) {
+            all.events[m.id] = { name:m.name, client:m.client, listed:(m.listed!==false), data: baseState() };
+          } else {
+            all.events[m.id].name   = m.name;
+            all.events[m.id].client = m.client;
+            all.events[m.id].listed = (m.listed!==false);
+          }
+        });
+        saveAll(all);
+
+        // repaint the table using your existing local-driven code
+        renderEventsTable._cloudRefreshing = false;
+        try { renderEventsTable(); } catch(_) {}
+      }).catch(function(){
+        renderEventsTable._cloudRefreshing = false;
+      });
+    } catch(_) {
+      renderEventsTable._cloudRefreshing = false;
+    }
+  }
+
+
   if(!emTable) return;
   const q = (emSearch?.value || '').toLowerCase();
   const list = store.list().filter(it =>
@@ -1837,10 +2018,17 @@ document.addEventListener('click', e=>{
       if (all.events[id]) {
         all.events[id].listed = !!showCb.checked;
         saveAll(all);
+        // write-through to cloud meta
+        try { CLOUD.writeMeta(id, {
+          name:   all.events[id].name,
+          client: all.events[id].client || '',
+          listed: all.events[id].listed !== false
+        }).catch(function(){}); } catch(_){}
         renderEventList();
         renderEventsTable();
       }
     };
+
     tdShow.appendChild(showCb);
 
     const tdOps = document.createElement('td');
@@ -1863,13 +2051,20 @@ document.addEventListener('click', e=>{
     saveBtn.onclick = ()=>{
       const all = loadAll();
       if(all.events[id]){
-        all.events[id].name = nameInput.value.trim() || all.events[id].name;
+        all.events[id].name   = nameInput.value.trim() || all.events[id].name;
         all.events[id].client = clientInput.value.trim();
         saveAll(all);
+        // write-through to cloud meta
+        try { CLOUD.writeMeta(id, {
+          name:   all.events[id].name,
+          client: all.events[id].client || '',
+          listed: (all.events[id].listed !== false)
+        }).catch(function(){}); } catch(_){}
         renderEventsTable();
         renderEventList();
       }
     };
+
 
     const duplicateBtn = document.createElement('button');
     duplicateBtn.className = 'btn';
