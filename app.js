@@ -141,7 +141,13 @@ function fireOnCards(container, engine, perCount=160) {
 
 const store={
   load(){ ensureInit(); const all=loadAll(); return all.events[all.currentId].data||baseState(); },
-  save(s){ const all=loadAll(); all.events[all.currentId].data=s; saveAll(all); },
+  save(s){
+    const all = loadAll();
+    all.events[all.currentId].data = s;
+    saveAll(all);                     // keep local in sync for snappy UI
+    // write-through to cloud (ignore network errors)
+    try { CLOUD.writeData(all.currentId, s).catch(()=>{}); } catch(_) {}
+  },
   list(){ ensureInit(); const all=loadAll();
   return Object.entries(all.events).map(([id,v])=>({
     id, name:v.name, client:v.client||'', listed: (v.listed !== false)
@@ -1195,6 +1201,24 @@ searchInput.addEventListener('input', ()=>{
 
   state = store.load();
 
+  // Try to replace local with cloud copy for this event (non-blocking)
+(async ()=>{
+  try {
+    const id = store.current().id;
+    const cloud = await CLOUD.readData(id);   // /events/{id}/data
+    if (cloud && typeof cloud === 'object') {
+      const all = loadAll();
+      if (all.events[id]) {
+        all.events[id].data = cloud;
+        saveAll(all);
+        state = store.load();
+        if (typeof renderAll === 'function') renderAll();
+      }
+    }
+  } catch(e){}
+})();
+
+
   // Events Manage tab elements
   emNewName = $('emNewName');
   emNewClient = $('emNewClient');
@@ -1205,14 +1229,19 @@ searchInput.addEventListener('input', ()=>{
   emTable = $('emTable');
 
   emCreate.addEventListener('click', ()=>{
-    const name = (emNewName.value || '新活動').trim();
-    const client = (emNewClient.value || '').trim();
-    createEvent(name, client);
-    state = store.load();
-    emNewName.value = ''; emNewClient.value = '';
-    renderAll();
-    setActivePage('pageEventsManage');
+  const name = (emNewName.value || '新活動').trim();
+  const client = (emNewClient.value || '').trim();
+  const id = createEvent(name, client);     // capture id
+  state = store.load();
+  // also write index meta to cloud
+  try { CLOUD.writeMeta(id, { name, client, listed: true }).catch(()=>{}); } catch(_){}
+  // and immediately write an initial data blob so cloud has it
+  try { CLOUD.writeData(id, state).catch(()=>{}); } catch(_){}
+  emNewName.value = ''; emNewClient.value = '';
+  renderAll();
+  setActivePage('pageEventsManage');
 });
+
 
 // === Merge cloud guests into local state (multi-device sync) ===
 (async ()=>{
@@ -1256,12 +1285,16 @@ searchInput.addEventListener('input', ()=>{
 emClone.addEventListener('click', ()=>{
   const proposed = (emCloneName.value || '').trim();
   const finalName = proposed || (`${store.current().name || '活動'}（副本）`);
-  cloneCurrentEvent(finalName);
+  const newId = cloneCurrentEvent(finalName);
   state = store.load();
+  // write the clone’s meta + data to cloud
+  try { CLOUD.writeMeta(newId, { name: finalName, client: '', listed: true }).catch(()=>{}); } catch(_){}
+  try { CLOUD.writeData(newId, state).catch(()=>{}); } catch(_){}
   emCloneName.value = '';
   renderAll();
   setActivePage('pageEventsManage');
 });
+
 
 emSearch.addEventListener('input', renderEventsTable);
 
@@ -1612,6 +1645,23 @@ function renderEventList(){
         store.switch(it.id);
         state = store.load();
         renderAll();
+        // After renderAll(); add this:
+        try {
+          CLOUD.readData(it.id).then(d=>{
+            if (d) {
+              const all = loadAll();
+              if (all.events[it.id]) {
+                all.events[it.id].data = d;
+                saveAll(all);
+                if (store.current().id === it.id) {
+                  state = store.load();
+                  renderAll();
+                }
+              }
+            }
+          }).catch(()=>{});
+        } catch(_){}
+
       }
     };
     eventList.appendChild(item);
