@@ -38,34 +38,36 @@ function ensureInit(){
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 function createEvent(name, client){
   const id = store.create(name, client);
+  // write meta + initial data to cloud
+  try { CLOUD.writeMeta(id, { name: name||'', client: client||'', listed: true }).catch(()=>{}); } catch(_){}
+  try { CLOUD.writeData(id, store.load()).catch(()=>{}); } catch(_){}
   return id;
 }
+
 function cloneCurrentEvent(newName){
   const curMeta = store.current();
   const all = JSON.parse(localStorage.getItem('ldraw-events-v3')) || { currentId:null, events:{} };
   const curData = all.events[curMeta.id]?.data || baseState();
   const newId = genId();
-
-  const meta = {
-    name:   newName || (curMeta.name + '（副本）'),
+  all.events[newId] = {
+    name: newName || (curMeta.name + '（副本）'),
     client: curMeta.client || '',
-    listed: (all.events[curMeta.id]?.listed !== false)
+    listed: (all.events[curMeta.id]?.listed !== false),
+    data: deepClone(curData)
   };
-
-  // write locally (keeps existing callers/UI flow intact)
-  all.events[newId] = { ...meta, data: deepClone(curData) };
   all.currentId = newId;
   localStorage.setItem('ldraw-events-v3', JSON.stringify(all));
 
-  // fire-and-forget: write to Firebase in background (no await)
-  try {
-    if (typeof CLOUD !== 'undefined') {
-      CLOUD.writeMeta(newId, meta).catch(()=>{});
-      CLOUD.writeData(newId, all.events[newId].data).catch(()=>{});
-    }
-  } catch {}
+  // also write to cloud
+  try { CLOUD.writeMeta(newId, {
+    name: all.events[newId].name,
+    client: all.events[newId].client,
+    listed: all.events[newId].listed !== false
+  }).catch(()=>{}); } catch(_){}
 
-  return newId; // still synchronous
+  try { CLOUD.writeData(newId, all.events[newId].data).catch(()=>{}); } catch(_){}
+
+  return newId;
 }
 
 
@@ -1584,137 +1586,79 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
 });
 
 function renderEventList(){
-
-    // --- CLOUD→LOCAL refresh (non-blocking, no async/await, keeps your render code unchanged)
-  if (!renderEventList._cloudHooked) {
-    renderEventList._cloudHooked = true;
-    try {
-      CLOUD.listEvents().then(function(cloudList){
-        cloudList = Array.isArray(cloudList) ? cloudList : [];
-        // merge cloud meta into local cache then repaint via your own function
-        var all = loadAll(); all.events = all.events || {};
-        cloudList.forEach(function(m){
-          if (!all.events[m.id]) {
-            all.events[m.id] = { name:m.name, client:m.client, listed:m.listed, data: baseState() };
-          } else {
-            all.events[m.id].name   = m.name;
-            all.events[m.id].client = m.client;
-            all.events[m.id].listed = (m.listed!==false);
-          }
-        });
-        saveAll(all);
-        // repaint using your existing local-based renderer
-        setTimeout(function(){ try{ renderEventList(); }catch(e){} }, 0);
-      }).catch(function(){});
-    } catch(e){}
-  }
-
   if (!eventList) return;
-  eventList.innerHTML = '載入中…';
 
-  // who is logged in? (written by login.js)
-  var isClient = false, allowed = null;
+  // show a placeholder while loading from cloud
+  eventList.innerHTML = '<div class="muted">載入中…</div>';
+
+  // permission filter for client role (uses your stored auth blob)
+  let isClient = false, allowed = null;
   try {
-    var me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
-    isClient = !!(me && me.role === 'client');
-    allowed = Array.isArray(me && me.events) ? me.events : null;
-  } catch(e){}
+    const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
+    isClient = me?.role === 'client';
+    allowed  = Array.isArray(me?.events) ? me.events : null;
+  } catch {}
 
-  // 1) show what we have locally right away (keeps UI snappy)
-  var localList = store.list().filter(function(it){ return it.listed; });
-  // apply client filter to local paint too
-  if (isClient && allowed && allowed.length) {
-    localList = localList.filter(function(it){ return allowed.indexOf(it.id) !== -1; });
-  }
-  eventList.innerHTML = '';
-  localList.forEach(function(it){
-    var item = document.createElement('div');
-    item.className = 'event-item' + (it.id === store.current().id ? ' active' : '');
-    item.setAttribute('data-id', it.id);
-    item.innerHTML =
-      '<div class="event-name">' + (it.name || '（未命名）') + '</div>' +
-      '<div class="event-meta">客戶：' + (it.client || '—') + '</div>' +
-      '<div class="event-meta">ID: ' + it.id + '</div>';
-    item.onclick = function(){
-      if (isClient && allowed && allowed.length && allowed.indexOf(it.id) === -1) {
-        alert('此帳號無權限訪問該活動'); return;
-      }
-      if (it.id === store.current().id) return;
-      if (confirm('切換至另一活動？未儲存的修改將遺失。')) {
-        // keep synchronous behavior
-        store.switch(it.id);
-        state = store.load();
-        renderAll();
-        // After renderAll(); add this:
-        try {
-          CLOUD.readData(it.id).then(d=>{
-            if (d) {
-              const all = loadAll();
-              if (all.events[it.id]) {
-                all.events[it.id].data = d;
-                saveAll(all);
-                if (store.current().id === it.id) {
-                  state = store.load();
-                  renderAll();
-                }
-              }
-            }
-          }).catch(()=>{});
-        } catch(_){}
+  // CLOUD-ONLY list
+  CLOUD.listEvents().then(list=>{
+    if (!Array.isArray(list)) list = [];
 
-      }
-    };
-    eventList.appendChild(item);
-  });
+    // filter by permission
+    if (isClient && allowed && allowed.length) {
+      list = list.filter(e => allowed.includes(e.id));
+    } else {
+      // super users see all "listed" items (as your original UX suggests)
+      list = list.filter(e => e.listed !== false);
+    }
 
-  // 2) background refresh from cloud, repaint when it arrives
-  if (typeof CLOUD !== 'undefined' && CLOUD.listEvents) {
-    CLOUD.listEvents().then(function(allCloud){
-      if (!Array.isArray(allCloud)) allCloud = [];
-      // client filter
-      if (isClient && allowed && allowed.length) {
-        allCloud = allCloud.filter(function(it){ return allowed.indexOf(it.id) !== -1; });
-      } else {
-        allCloud = allCloud.filter(function(it){ return it.listed; });
-      }
+    eventList.innerHTML = '';
+    list.forEach(it=>{
+      const div = document.createElement('div');
+      div.className = 'event-item' + (it.id === store.current().id ? ' active' : '');
+      div.dataset.id = it.id;
+      div.innerHTML = `
+        <div class="event-name">${it.name || ''}</div>
+        <div class="event-sub">${it.client || ''}</div>
+        <div class="event-id">${it.id}</div>
+      `;
+      div.onclick = ()=>{
+        // extra guard for client
+        if (isClient && allowed && !allowed.includes(it.id)) {
+          alert('此帳號無權限訪問該活動'); return;
+        }
+        if (it.id === store.current().id) return;
 
-      // if nothing changed, we can skip repaint; otherwise repaint from cloud
-      eventList.innerHTML = '';
-      allCloud.forEach(function(it){
-        var item = document.createElement('div');
-        item.className = 'event-item' + (it.id === store.current().id ? ' active' : '');
-        item.setAttribute('data-id', it.id);
-        item.innerHTML =
-          '<div class="event-name">' + (it.name || '（未命名）') + '</div>' +
-          '<div class="event-meta">客戶：' + (it.client || '—') + '</div>' +
-          '<div class="event-meta">ID: ' + it.id + '</div>';
-        item.onclick = function(){
-          if (isClient && allowed && allowed.length && allowed.indexOf(it.id) === -1) {
-            alert('此帳號無權限訪問該活動'); return;
-          }
-          if (it.id === store.current().id) return;
-          if (confirm('切換至另一活動？未儲存的修改將遺失。')) {
-            store.switch(it.id);      // still sync
-            state = store.load();     // sync
-            renderAll();
-          }
-        };
-        eventList.appendChild(item);
-      });
-
-      // If client’s current event is not allowed anymore, auto-jump to first allowed
-      if (isClient && allowed && allowed.length) {
-        var cur = store.current();
-        var ok = allCloud.some(function(e){ return e.id === cur.id; });
-        if (!ok && allCloud[0]) {
-          store.switch(allCloud[0].id);
+        if (confirm(`切換至：${it.name}？`)) {
+          // switch locally so the rest of the app keeps working
+          store.switch(it.id);
           state = store.load();
           renderAll();
+
+          // immediately pull the latest cloud state and replace local cache
+          CLOUD.readData(it.id).then(cloud=>{
+            if (!cloud) return;
+            const all = loadAll();
+            if (!all.events[it.id]) {
+              all.events[it.id] = { name: it.name, client: it.client, listed: it.listed !== false, data: baseState() };
+            }
+            all.events[it.id].data = cloud;
+            saveAll(all);
+            state = store.load();
+            renderAll();
+          }).catch(()=>{});
         }
-      }
-    }).catch(function(){ /* ignore cloud errors for now */ });
-  }
+      };
+      eventList.appendChild(div);
+    });
+
+    if (!list.length) {
+      eventList.innerHTML = '<div class="muted">（雲端無活動）</div>';
+    }
+  }).catch(()=>{
+    eventList.innerHTML = '<div class="muted">雲端讀取失敗</div>';
+  });
 }
+
 
 
 
@@ -1999,154 +1943,151 @@ document.addEventListener('click', e=>{
 });
 
 
-    function renderEventsTable(){
-        // --- CLOUD→LOCAL refresh for the 管理 table (non-blocking)
-    // --- CLOUD→LOCAL refresh for the 管理 table (non-blocking; stays sync)
-  if (!renderEventsTable._cloudRefreshing && typeof CLOUD !== 'undefined' && CLOUD.listEvents) {
-    renderEventsTable._cloudRefreshing = true;
-    try {
-      CLOUD.listEvents().then(function(cloudList){
-        cloudList = Array.isArray(cloudList) ? cloudList : [];
+function renderEventsTable(){
+  if (!emTable) return;
 
-        // Merge cloud meta into local cache that your table already reads from
-        var all = loadAll(); all.events = all.events || {};
-        cloudList.forEach(function(m){
-          if (!all.events[m.id]) {
-            all.events[m.id] = { name:m.name, client:m.client, listed:(m.listed!==false), data: baseState() };
-          } else {
-            all.events[m.id].name   = m.name;
-            all.events[m.id].client = m.client;
-            all.events[m.id].listed = (m.listed!==false);
-          }
-        });
+  emTable.innerHTML = '<tr><td colspan="5" class="muted">載入中…</td></tr>';
+
+  let isClient = false, allowed = null;
+  try {
+    const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
+    isClient = me?.role === 'client';
+    allowed  = Array.isArray(me?.events) ? me.events : null;
+  } catch {}
+
+  const q = (emSearch?.value || '').toLowerCase();
+
+  CLOUD.listEvents().then(list=>{
+    if (!Array.isArray(list)) list = [];
+
+    // permission + search
+    if (isClient && allowed && allowed.length) {
+      list = list.filter(e => allowed.includes(e.id));
+    }
+    list = list.filter(e =>
+      (e.name||'').toLowerCase().includes(q) || (e.client||'').toLowerCase().includes(q)
+    );
+
+    emTable.innerHTML = '';
+    list.forEach(({id, name, client, listed})=>{
+      const tr = document.createElement('tr');
+
+      // 名稱
+      const tdName = document.createElement('td');
+      const nameInput = document.createElement('input');
+      nameInput.value = name || '';
+      nameInput.style.minWidth = '200px';
+      tdName.appendChild(nameInput);
+
+      // 客戶
+      const tdClient = document.createElement('td');
+      const clientInput = document.createElement('input');
+      clientInput.value = client || '';
+      clientInput.style.minWidth = '160px';
+      tdClient.appendChild(clientInput);
+
+      // ID
+      const tdId = document.createElement('td');
+      tdId.textContent = id;
+
+      // 顯示於清單
+      const tdShow = document.createElement('td');
+      const showCb = document.createElement('input');
+      showCb.type = 'checkbox';
+      showCb.checked = (listed !== false);
+      showCb.title = '顯示於「活動清單」';
+      showCb.onchange = ()=>{
+        // update cloud meta
+        CLOUD.writeMeta(id, {
+          name: (nameInput.value||'').trim(),
+          client: (clientInput.value||'').trim(),
+          listed: !!showCb.checked
+        }).catch(()=>{});
+
+        // keep local cache coherent so the rest of the app continues to work
+        const all = loadAll(); all.events = all.events || {};
+        if (!all.events[id]) {
+          all.events[id] = { name: nameInput.value||'', client: clientInput.value||'', listed: !!showCb.checked, data: baseState() };
+        } else {
+          all.events[id].name   = nameInput.value||'';
+          all.events[id].client = clientInput.value||'';
+          all.events[id].listed = !!showCb.checked;
+        }
         saveAll(all);
 
-        // repaint the table using your existing local-driven code
-        renderEventsTable._cloudRefreshing = false;
-        try { renderEventsTable(); } catch(_) {}
-      }).catch(function(){
-        renderEventsTable._cloudRefreshing = false;
-      });
-    } catch(_) {
-      renderEventsTable._cloudRefreshing = false;
-    }
-  }
+        renderEventList();
+        renderEventsTable();
+      };
+      tdShow.appendChild(showCb);
 
+      // 操作
+      const tdOps = document.createElement('td');
 
-  if(!emTable) return;
-  const q = (emSearch?.value || '').toLowerCase();
-  const list = store.list().filter(it =>
-    (it.name||'').toLowerCase().includes(q) || (it.client||'').toLowerCase().includes(q)
-  );
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn';
+      saveBtn.textContent = '儲存';
+      saveBtn.onclick = ()=>{
+        CLOUD.writeMeta(id, {
+          name: (nameInput.value||'').trim(),
+          client: (clientInput.value||'').trim(),
+          listed: !!showCb.checked
+        }).catch(()=>{});
 
-  emTable.innerHTML = '';
-  list.forEach(({id, name, client, listed})=>{
-    const tr = document.createElement('tr');
-
-    const tdName = document.createElement('td');
-    const nameInput = document.createElement('input');
-    nameInput.value = name || '';
-    nameInput.style.minWidth = '200px';
-    tdName.appendChild(nameInput);
-
-    const tdClient = document.createElement('td');
-    const clientInput = document.createElement('input');
-    clientInput.value = client || '';
-    clientInput.style.minWidth = '160px';
-    tdClient.appendChild(clientInput);
-
-    const tdId = document.createElement('td');
-    tdId.textContent = id;
-
-    const tdShow = document.createElement('td');
-    const showCb = document.createElement('input');
-    showCb.type = 'checkbox';
-    showCb.checked = (listed !== false);
-    showCb.title = '顯示於「活動清單」';
-    showCb.onchange = ()=>{
-      const all = loadAll();
-      if (all.events[id]) {
+        const all = loadAll(); all.events = all.events || {};
+        if (!all.events[id]) all.events[id] = { name:'', client:'', listed:true, data: baseState() };
+        all.events[id].name   = (nameInput.value||'').trim();
+        all.events[id].client = (clientInput.value||'').trim();
         all.events[id].listed = !!showCb.checked;
         saveAll(all);
-        // write-through to cloud meta
-        try { CLOUD.writeMeta(id, {
-          name:   all.events[id].name,
-          client: all.events[id].client || '',
-          listed: all.events[id].listed !== false
-        }).catch(function(){}); } catch(_){}
+
         renderEventList();
         renderEventsTable();
-      }
-    };
+      };
 
-    tdShow.appendChild(showCb);
+      const switchBtn = document.createElement('button');
+      switchBtn.className = 'btn';
+      switchBtn.textContent = (id === store.current().id) ? '✓ 使用中' : '切換';
+      switchBtn.disabled = (id === store.current().id);
+      switchBtn.onclick = ()=>{
+        if (id === store.current().id) return;
+        store.switch(id);
+        state = store.load();
+        renderAll();
 
-    const tdOps = document.createElement('td');
+        // fetch latest cloud data immediately
+        CLOUD.readData(id).then(cloud=>{
+          if (!cloud) return;
+          const all = loadAll();
+          if (!all.events[id]) {
+            all.events[id] = { name: nameInput.value||'', client: clientInput.value||'', listed: !!showCb.checked, data: baseState() };
+          }
+          all.events[id].data = cloud;
+          saveAll(all);
+          state = store.load();
+          renderAll();
+          setActivePage('pageEventsManage');
+        }).catch(()=>{});
+      };
 
-    const switchBtn = document.createElement('button');
-    switchBtn.className = 'btn';
-    switchBtn.textContent = (id === store.current().id) ? '✓ 使用中' : '切換';
-    switchBtn.disabled = (id === store.current().id);
-    switchBtn.onclick = ()=>{
-      if(id === store.current().id) return;
-      store.switch(id);
-      state = store.load();
-      renderAll();
-      setActivePage('pageEventsManage');
-    };
+      tdOps.appendChild(saveBtn);
+      tdOps.appendChild(switchBtn);
 
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn';
-    saveBtn.textContent = '💾 儲存';
-    saveBtn.onclick = ()=>{
-      const all = loadAll();
-      if(all.events[id]){
-        all.events[id].name   = nameInput.value.trim() || all.events[id].name;
-        all.events[id].client = clientInput.value.trim();
-        saveAll(all);
-        // write-through to cloud meta
-        try { CLOUD.writeMeta(id, {
-          name:   all.events[id].name,
-          client: all.events[id].client || '',
-          listed: (all.events[id].listed !== false)
-        }).catch(function(){}); } catch(_){}
-        renderEventsTable();
-        renderEventList();
-      }
-    };
+      tr.appendChild(tdName);
+      tr.appendChild(tdClient);
+      tr.appendChild(tdId);
+      tr.appendChild(tdShow);
+      tr.appendChild(tdOps);
+      emTable.appendChild(tr);
+    });
 
-
-    const duplicateBtn = document.createElement('button');
-    duplicateBtn.className = 'btn';
-    duplicateBtn.textContent = '🔁 複製';
-    duplicateBtn.onclick = ()=>{
-      const newId = cloneSpecificEvent(id, `${nameInput.value || '活動'}（副本）`);
-      store.switch(newId);
-      state = store.load();
-      renderAll();
-      setActivePage('pageEventsManage');
-    };
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn danger';
-    deleteBtn.textContent = '刪除';
-    deleteBtn.onclick = ()=>{
-      if(!confirm('確定刪除此活動？（無法復原）')) return;
-      const all = loadAll();
-      delete all.events[id];
-      const remainIds = Object.keys(all.events);
-      all.currentId = remainIds[0] || null;
-      saveAll(all);
-      state = store.load();
-      renderAll();
-      setActivePage('pageEventsManage');
-    };
-
-    tdOps.append(switchBtn, saveBtn, duplicateBtn, deleteBtn);
-    tr.append(tdName, tdClient, tdId, tdShow, tdOps);
-    emTable.appendChild(tr);
+    if (!list.length) {
+      emTable.innerHTML = '<tr><td colspan="5" class="muted">（雲端無符合項目）</td></tr>';
+    }
+  }).catch(()=>{
+    emTable.innerHTML = '<tr><td colspan="5" class="muted">雲端讀取失敗</td></tr>';
   });
 }
+
 
 // === 投票（CMS）===
 function renderPollAdmin(){
