@@ -83,12 +83,14 @@ const FB = {
 const CLOUD = {
   // Meta list lives under /eventsIndex/{id} -> { name, client, listed }
   async listEvents() {
-    const map = await FB.get(`/eventsIndex`) || {};
-    return Object.entries(map).map(([id, meta]) => ({
-      id, name: meta?.name || '（未命名）',
-      client: meta?.client || '', listed: meta?.listed !== false
-    }));
-  },
+  const map = await FB.get(`/eventsIndex`) || {};
+  return Object.entries(map).map(([id, meta]) => ({
+    id,
+    name:   (meta && meta.name)   || '（未命名）',
+    client: (meta && meta.client) || '',
+    listed: !meta || meta.listed !== false
+  }));
+},
   async writeMeta(id, meta) {
     await FB.patch(`/eventsIndex/${id}`, {
       name: meta.name || '（未命名）',
@@ -142,7 +144,28 @@ function fireOnCards(container, engine, perCount=160) {
 }
 
 const store={
-  load(){ ensureInit(); const all=loadAll(); return all.events[all.currentId].data||baseState(); },
+// Load the selected event's data from Firebase into local cache, then return it
+load(){
+  ensureInit();
+  const all = loadAll();
+  const id  = all.currentId;
+  const local = all.events[id]?.data || baseState();
+
+  // kick a cloud refresh; don't block UI
+  try{
+    CLOUD.readData(id).then(cloud=>{
+      if(!cloud) return;
+      const all2 = loadAll();
+      if (all2.events[id]) {
+        all2.events[id].data = cloud;
+        saveAll(all2);
+        if (typeof renderAll === 'function') renderAll();
+      }
+    }).catch(()=>{});
+  }catch{}
+
+  return local; // UI uses local mirror, but it's refreshed from cloud
+},
   save(s){
     const all = loadAll();
     all.events[all.currentId].data = s;
@@ -150,11 +173,33 @@ const store={
     // write-through to cloud (ignore network errors)
     try { CLOUD.writeData(all.currentId, s).catch(()=>{}); } catch(_) {}
   },
-  list(){ ensureInit(); const all=loadAll();
-  return Object.entries(all.events).map(([id,v])=>({
-    id, name:v.name, client:v.client||'', listed: (v.listed !== false)
-  }));
+  // Always read the events list from Firebase
+async list(){
+  try{
+    const items = await CLOUD.listEvents(); // [{id, name, client, listed}]
+    // keep a local mirror only for UI speed, but cloud is the source of truth
+    const all = loadAll();
+    items.forEach(m=>{
+      if(!all.events[m.id]) all.events[m.id] = { name:m.name, client:m.client||'', listed:m.listed!==false, data: baseState() };
+      else {
+        all.events[m.id].name   = m.name;
+        all.events[m.id].client = m.client||'';
+        all.events[m.id].listed = m.listed!==false;
+      }
+    });
+    saveAll(all);
+    // re-render the Events sidebar if it exists
+    if (typeof renderEventSidebar === 'function') renderEventSidebar(items);
+    return items;
+  }catch(_){
+    // fallback to whatever we cached
+    const all = loadAll();
+    return Object.entries(all.events).map(([id,v])=>({
+      id, name:v.name, client:v.client||'', listed: (v.listed !== false)
+    }));
+  }
 },
+
 
   current(){ const all=loadAll(); const meta=all.events[all.currentId]||{name:'',client:''}; return {id:all.currentId,name:meta.name,client:meta.client}; },
   switch(id){
@@ -1220,6 +1265,27 @@ searchInput.addEventListener('input', ()=>{
   } catch(e){}
 })();
 
+// Cloud-first: ensure current list & active event are hydrated from cloud on boot
+(async function syncCloudOnBoot(){
+  try{
+    const items = await CLOUD.listEvents(); // refresh sidebar + cache
+    if (typeof renderEventSidebar === 'function') renderEventSidebar(items);
+
+    const all = loadAll();
+    const currentId = all.currentId || (items[0]?.id);
+    if (currentId && (!all.currentId || !all.events[currentId]?.data)) {
+      const cloud = await CLOUD.readData(currentId);
+      if (cloud) {
+        const all2 = loadAll();
+        all2.currentId = currentId;
+        all2.events[currentId] = all2.events[currentId] || { name: items.find(x=>x.id===currentId)?.name || '活動', client:'', listed:true, data: baseState() };
+        all2.events[currentId].data = cloud;
+        saveAll(all2);
+        if (typeof renderAll === 'function') renderAll();
+      }
+    }
+  }catch{}
+})();
 
   // Events Manage tab elements
   emNewName = $('emNewName');
