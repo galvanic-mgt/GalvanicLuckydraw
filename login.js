@@ -1,12 +1,4 @@
 // ===== LOGIN (Firebase-backed with local fallback) =====
-// REST wrapper (match app.js base)
-const FB = {
-  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app',
-  get:   (p)   => fetch(`${FB.base}${p}.json`).then(r=>r.json()),
-  put:   (p,b) => fetch(`${FB.base}${p}.json`, {method:'PUT',   body:JSON.stringify(b)}).then(r=>r.json()),
-  patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
-};
-
 (function initLogin(){
   // Local fallback keys
   const USERS_KEY = 'ldraw-users-v1';
@@ -21,21 +13,30 @@ const FB = {
   const setAuth  = (u)   => localStorage.setItem(AUTH_KEY, JSON.stringify(u || null));
   const getAuth  = () => { try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; } };
 
-  const hasFirebase = true; // we will always use REST RTDB
+  const hasFirebase = !!(window.rtdb && window.firebase);
   const usersPath   = '/users'; // { id, email, password, role, events?[] }
 
   // Ensure a default admin if no users exist (FB or local)
   async function ensureDefaultAdmin(){
-  const map = await FB.get(usersPath) || {};
-  const any = Object.values(map).some(u => u && u.email);
-  if (!any) {
-    const id = btoa('admin').replace(/=+$/,'');
-    await FB.put(`${usersPath}/${id}`, {
-      id, email:'admin', password:'admin', role:'super', events:[]
-    });
+    if (hasFirebase) {
+      const snap = await rtdb.ref(usersPath).once('value');
+      const obj = snap.val() || {};
+      const any = Object.values(obj).some(u => u && u.email);
+      if (!any) {
+        const id = rtdb.ref(usersPath).push().key;
+        await rtdb.ref(`${usersPath}/${id}`).set({
+          id, email:'admin', password:'admin', role:'super', events:[]
+        });
+      }
+    } else {
+      let users = getLocalUsers();
+      if (!Array.isArray(users) || users.length === 0 || !users.some(u => u && u.username === 'admin')) {
+        users = users.filter(Boolean);
+        users.push({ username:'admin', password:'admin', role:'super', events:[] });
+        saveLocalUsers(users);
+      }
+    }
   }
-}
-
 
 function applyRoleUI(role){
   // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
@@ -110,13 +111,20 @@ function applyRoleUI(role){
 
   // Credentials check (FB or local)
   async function checkLogin(user, pass){
-  // REST: pull all users then check
-  const map = await FB.get(usersPath) || {};
-  const all = Object.values(map);
-  const found = all.find(u => (u.email || '') === user && (u.password || '') === pass);
-  if (!found) return null;
-  return { username: found.email, role: found.role || 'client', events: found.events || [], _id: found.id };
-}
+    if (hasFirebase) {
+      const snap = await rtdb.ref(usersPath).once('value');
+      const obj = snap.val() || {};
+      const all = Object.values(obj);
+      const found = all.find(u => (u.email || '') === user && (u.password || '') === pass);
+      if (!found) return null;
+      return { username: found.email, role: found.role || 'client', events: found.events || [], _id: found.id };
+    } else {
+      const users = getLocalUsers();
+      const u = users.find(x => x && (x.username === user || x.email === user) && x.password === pass);
+      if (!u) return null;
+      return { username: u.username || u.email, role: u.role || 'super', events: u.events || [] };
+    }
+  }
 
   // DOM
   const gate   = document.getElementById('loginGate');

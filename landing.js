@@ -1,22 +1,9 @@
-// === Firebase-backed landing boot ===
+const STORE_KEY='ldraw-events-v3';
+function getAll(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{currentId:null,events:{}}; }catch{ return {currentId:null,events:{}}; } }
 function qsParam(key){ const u=new URL(location.href); return u.searchParams.get(key); }
-
-const FB = {
-  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // your RTDB root
-  get:   (p) => fetch(`${FB.base}${p}.json`).then(r=>r.json()),
-  patch: (p,b) => fetch(`${FB.base}${p}.json`, { method:'PATCH', body: JSON.stringify(b) }).then(r=>r.json()),
-  put:   (p,b) => fetch(`${FB.base}${p}.json`, { method:'PUT',   body: JSON.stringify(b) }).then(r=>r.json())
-};
-
-function eid(){ return qsParam('event') || ''; }
-
-async function loadEventCloud(){
-  const id = eid();
-  if (!id) return { id:null, data:null };
-  const data = await FB.get(`/events/${encodeURIComponent(id)}`);
-  return { id, data: data || null };
-}
-
+function loadEvent(){ const all=getAll(); const eventId = qsParam('event') || all.currentId; if(!eventId || !all.events[eventId]) return {id:null, name:'', data:null}; return {id:eventId, name:all.events[eventId].name, data:all.events[eventId].data}; }
+// === Guest check-in helpers ===
+function eid() { return ev?.id || (qsParam('event') || ''); }
 
 function showSeatCard(guest){
   const card = document.getElementById('seatCard');
@@ -25,6 +12,7 @@ function showSeatCard(guest){
   if (card) card.style.display = 'block';
 }
 
+const ev = loadEvent(); const state = ev.data || { people:[], eventInfo:{}, questions:[], banner:null, logo:null };
 function qsAll(){ const u=new URL(location.href); return Object.fromEntries(u.searchParams.entries()); }
 function getPollFromState(pollId){
   const polls = state.polls || [];
@@ -213,102 +201,87 @@ window.addEventListener('storage', (e)=>{
 });
 
 
-document.addEventListener('DOMContentLoaded', async ()=>{
-  // Load current event data from Firebase
-  const ev = await loadEventCloud();
-  const state = ev.data || { people:[], eventInfo:{}, questions:[], banner:null, logo:null };
+document.addEventListener('DOMContentLoaded', ()=>{
+  initInfo();
+  renderQuestions();
+  document.getElementById('signupForm').addEventListener('submit', handleSignupSubmit);
 
-  // --- hydrate landing visuals from cloud state ---
-  function t(id, val){ const e=document.getElementById(id); if(e) e.textContent = val||''; }
-  const b=document.getElementById('banner');
-  if (state.banner && b) b.style.backgroundImage = `url(${state.banner})`;
-  const logo=document.getElementById('logo');
-  if (state.logo && logo) logo.src = state.logo;
+  // === Poll boot ===
+  const q = qsAll();
+  let pollId = q.poll;
+  let view   = (q.view || 'poll');
 
-  t('evTitle', state.eventInfo?.title || '活動');
-  t('evDateTime', state.eventInfo?.dateTime || '');
-  t('evVenue', state.eventInfo?.venue || '');
-  t('evAddress', state.eventInfo?.address || '');
-  t('evBus', state.eventInfo?.bus || '');
-  t('evTrain', state.eventInfo?.train || '');
-  t('evParking', state.eventInfo?.parking || '');
-  const mapBtn=document.getElementById('mapBtn');
-  if (state.eventInfo?.mapUrl && mapBtn) mapBtn.href = state.eventInfo.mapUrl;
-  const notesEl=document.getElementById('evNotes');
-  if (notesEl) notesEl.textContent = state.eventInfo?.notes || '';
-
-  // Re-render dynamic signup questions
-  const wrap=document.getElementById('dynamicQuestions');
-  if (wrap) {
-    wrap.innerHTML='';
-    (state.questions||[]).forEach(q=>{
-      const field=document.createElement('label');
-      field.className='lp-field';
-      const title=document.createElement('span');
-      title.textContent=q.text+(q.required?' *':'');
-      field.appendChild(title);
-      let input;
-      if(q.type==='select'){
-        input=document.createElement('select');
-        (q.options||[]).forEach(opt=>{
-          const o=document.createElement('option'); o.value=opt; o.textContent=opt; input.appendChild(o);
-        });
-      } else if(q.type==='boolean'){
-        input=document.createElement('select');
-        ['是','否'].forEach(opt=>{
-          const o=document.createElement('option'); o.value=opt; o.textContent=opt; input.appendChild(o);
-        });
-      } else {
-        input=document.createElement('input'); input.placeholder=q.placeholder||'';
-      }
-      input.name=q.text; if(q.required) input.required=true;
-      field.appendChild(input); wrap.appendChild(field);
-    });
+  // If no poll specified, default to the event's current poll
+  if (!pollId && state && Array.isArray(state.polls) && state.currentPollId) {
+    pollId = state.currentPollId;
   }
 
-  // --- SIGNUP submit now writes to Firebase, not localStorage ---
-  const signupForm = document.getElementById('signupForm');
-  if (signupForm) {
-    signupForm.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const name = document.getElementById('signupName').value.trim();
-      const dept = document.getElementById('signupDept').value.trim();
-      if(!name || !dept) return;
+  if (pollId) {
+    const cur = getPollFromState(pollId);
+        if (cur) {
+        if (view === 'result') {
+  (async () => {
+    // live refresh from Firebase so public screen updates
+    const FB = {
+      base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← replace
+      get: (p) => fetch(`${FB.base}${p}.json`).then(r => r.json())
+    };
 
-      // pack answers
-      const answers={};
-      document.querySelectorAll('#dynamicQuestions input, #dynamicQuestions select').forEach(el=>{
-        answers[el.name]=el.value;
-      });
+    const draw = async () => {
+      const fresh = await FB.get(`/events/${ev.id}/polls/${pollId}`);
+      renderPollResult(fresh || cur);
+    };
 
-      const id = eid();
-      // Upsert a guest keyed by name+dept (or change to your code keying if you have one)
-      const guestKey = btoa(`${name}||${dept}`).replace(/=+$/,''); // stable key
-      const path = `/events/${encodeURIComponent(id)}/guests/${guestKey}`;
+    await draw();
+    setInterval(draw, 2000);
+  })();
+} else {
+  renderPollVote(cur); // (kept for completeness)
+}
+// === Guest check-in: form submit ===
+const checkinForm = document.getElementById('checkinForm');
+if (checkinForm) {
+  checkinForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const codeEl = document.getElementById('codeDigits');
+    const msgEl  = document.getElementById('checkinMsg');
+    const code   = (codeEl?.value || '').trim();
+    const eventId = eid();
 
-      // fetch existing to preserve fields
-      const existing = await FB.get(path) || {};
-      const updated = {
-        ...existing,
-        name, dept,
-        answers,
-        arrived: true,                  // mark present on signup
-        eligible: true,
-      };
-      await FB.put(path, updated);
+    if (!eventId) { if (msgEl) msgEl.textContent = '連結缺少活動參數。'; return; }
+    if (!code)    { if (msgEl) msgEl.textContent = '請輸入你的碼。'; return; }
 
-      // landing toast
-      const msg = document.getElementById('signupMsg');
-      if (msg) msg.innerHTML = `✅ 已提交：<strong>${name}</strong>（${dept}）`;
-      e.target.reset();
+    // Reuse/extend your existing FB wrapper if already present. Otherwise:
+    const FB = {
+      base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← confirm/change if needed
+      get:  (p) => fetch(`${FB.base}${p}.json`).then(r => r.json()),
+      patch:(p,b)=> fetch(`${FB.base}${p}.json`, { method:'PATCH', body: JSON.stringify(b) }).then(r=>r.json())
+    };
+
+    // Lookup guest by "code"
+    const guest = await FB.get(`/events/${eventId}/guests/${encodeURIComponent(code)}`);
+    if (!guest || !guest.name) {
+      if (msgEl) msgEl.textContent = '找不到你的資料，請向工作人員查詢。';
+      return;
+    }
+
+    // Mark arrival + eligibility atomically
+    await FB.patch(`/events/${eventId}/guests/${encodeURIComponent(code)}`, {
+      arrived: true,
+      eligible: true,
+      checkinAt: Date.now()
     });
+
+    // Show seat
+    if (msgEl) msgEl.innerHTML = `✅ 已報到：<strong>${guest.name}</strong>${guest.dept ? `（${guest.dept}）` : ''}`;
+    showSeatCard(guest);
+    if (codeEl) codeEl.value = '';
+  });
+}
+
+
+    }
   }
-
-  // --- Poll (vote & result) already talks to Firebase  ---
-
-  // --- Check-in (by code) already uses Firebase in file ---
-
 });
-
 
 
