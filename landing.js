@@ -1,7 +1,3 @@
-const STORE_KEY='ldraw-events-v3';
-function getAll(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{currentId:null,events:{}}; }catch{ return {currentId:null,events:{}}; } }
-function qsParam(key){ const u=new URL(location.href); return u.searchParams.get(key); }
-function loadEvent(){ const all=getAll(); const eventId = qsParam('event') || all.currentId; if(!eventId || !all.events[eventId]) return {id:null, name:'', data:null}; return {id:eventId, name:all.events[eventId].name, data:all.events[eventId].data}; }
 // === Guest check-in helpers ===
 function eid() { return ev?.id || (qsParam('event') || ''); }
 
@@ -12,7 +8,9 @@ function showSeatCard(guest){
   if (card) card.style.display = 'block';
 }
 
-const ev = loadEvent(); const state = ev.data || { people:[], eventInfo:{}, questions:[], banner:null, logo:null };
+let ev = { id: '', name: '' };
+let state = { people:[], eventInfo:{}, questions:[], banner:null, logo:null, polls:[], currentPollId:null };
+function qsParam(key){ const u=new URL(location.href); return u.searchParams.get(key); }
 function qsAll(){ const u=new URL(location.href); return Object.fromEntries(u.searchParams.entries()); }
 function getPollFromState(pollId){
   const polls = state.polls || [];
@@ -36,42 +34,37 @@ function votedKey(eid,pid){ return `ldraw-voted-${eid}-${pid}`; }
 function t(id, val){ const e=document.getElementById(id); if(e) e.textContent=val||''; }
 function initInfo(){ const b=document.getElementById('banner'); if(state.banner){ b.style.backgroundImage=`url(${state.banner})`; } if(state.logo){ const l=document.getElementById('logo'); l.src=state.logo; } t('evTitle', state.eventInfo?.title || '活動'); t('evDateTime', state.eventInfo?.dateTime || ''); t('evVenue', state.eventInfo?.venue || ''); t('evAddress', state.eventInfo?.address || ''); t('evBus', state.eventInfo?.bus || ''); t('evTrain', state.eventInfo?.train || ''); t('evParking', state.eventInfo?.parking || ''); t('evNotes', state.eventInfo?.notes || ''); const mapBtn=document.getElementById('mapBtn'); if(state.eventInfo?.mapUrl){ mapBtn.href=state.eventInfo.mapUrl; } else { mapBtn.style.display='none'; } }
 function renderQuestions(){ const wrap=document.getElementById('dynamicQuestions'); wrap.innerHTML=''; (state.questions||[]).forEach(q=>{ const field=document.createElement('label'); field.className='lp-field'; const title=document.createElement('span'); title.textContent=q.text+(q.required?' *':''); field.appendChild(title); let input; if(q.type==='select'){ input=document.createElement('select'); (q.options||[]).forEach(opt=>{ const o=document.createElement('option'); o.value=opt; o.textContent=opt; input.appendChild(o); }); } else if(q.type==='boolean'){ input=document.createElement('select'); ['是','否'].forEach(opt=>{ const o=document.createElement('option'); o.value=opt; o.textContent=opt; input.appendChild(o); }); } else { input=document.createElement('input'); input.placeholder=q.placeholder||''; } input.name=q.text; if(q.required) input.required=true; field.appendChild(input); wrap.appendChild(field); }); }
-function handleSignupSubmit(e){
+async function handleSignupSubmit(e){
   e.preventDefault();
-  const name=document.getElementById('signupName').value.trim();
-  const dept=document.getElementById('signupDept').value.trim();
-  if(!name||!dept){ return; }
+  const name = document.getElementById('signupName').value.trim();
+  const dept = document.getElementById('signupDept').value.trim();
+  if(!name || !dept) return;
 
-  const answers={};
+  const answers = {};
   document.querySelectorAll('#dynamicQuestions input, #dynamicQuestions select').forEach(el=>{
     answers[el.name]=el.value;
   });
 
-  const all=getAll();
-  if(!all.events[ev.id]) return;
-  const data = all.events[ev.id].data || { people:[], winners:[], remaining:[] };
+  const eventId = qsParam('event') || ev.id || '';
+  if (!eventId) { document.getElementById('signupMsg').textContent = '連結缺少活動參數。'; return; }
 
-  // find existing person by name+dept; mark present if found
-  let person = (data.people||[]).find(p => p.name===name && (p.dept||'')===dept);
-  if(person){
-    person.checkedIn = true;
-    person.answers = answers;
-  } else {
-    // add a new person (present)
-    person = { name, dept, answers, checkedIn:true };
-    data.people.push(person);
-  }
+  // Create/merge a guest under /events/<id>/guests using a deterministic key from name+dept
+  const key = encodeURIComponent(`${name}__${dept}`); // stable per person
+  const FB = (window.EventData && window.EventData._fb);
 
-  // rebuild remaining = checked-in & not already won
-  const winnersSet = new Set((data.winners||[]).map(w => `${w.name}||${w.dept||''}`));
-  data.remaining = (data.people||[]).filter(p => p.checkedIn && !winnersSet.has(`${p.name}||${p.dept||''}`));
+  // Upsert guest + mark present
+  await FB.patch(`/events/${eventId}/guests/${key}`, {
+    name, dept,
+    arrived: true,               // checked in
+    eligible: true,              // eligible for draw
+    answers,
+    checkinAt: Date.now()
+  });
 
-  all.events[ev.id].data = data;
-  localStorage.setItem(STORE_KEY, JSON.stringify(all));
-
-  document.getElementById('signupMsg').innerHTML=`✅ 已提交：<strong>${name}</strong>（${dept}）`;
+  document.getElementById('signupMsg').innerHTML = `✅ 已提交：<strong>${name}</strong>（${dept}）`;
   e.target.reset();
 }
+
 
 function renderPollVote(p){
   const card = document.getElementById('pollCard');
@@ -109,22 +102,24 @@ function renderPollVote(p){
     msg.textContent = '';
   }
 
-  btn.onclick = ()=>{
-    if(!selected) return;
-    const all = getAll();
-    const data = all.events[ev.id].data || state;
-    const cur = (data.polls||[]).find(x=>x.id===p.id);
-    if(!cur) return;
+  btn.onclick = async ()=>{
+  if(!selected) return;
+  const eventId = qsParam('event') || ev.id || '';
+  if (!eventId) return;
 
-    ensurePollVotes(cur);
-    cur.votes[selected] = (cur.votes[selected]||0) + 1;
+  const FB = (window.EventData && window.EventData._fb);
+  const cur = await FB.get(`/events/${eventId}/polls/${p.id}`);
+  if (!cur) return;
 
-    saveEventData(data);
-    localStorage.setItem(votedKey(ev.id,p.id), '1');
+  // Atomic-ish: read current bucket, write next
+  const curVal = await FB.get(`/events/${eventId}/polls/${p.id}/votes/${selected}`);
+  const next = (typeof curVal === 'number' ? curVal : 0) + 1;
+  await FB.put(`/events/${eventId}/polls/${p.id}/votes/${selected}`, next);
 
-    msg.innerHTML = '✅ 已提交，感謝你的投票！';
-    btn.disabled = true;
-  };
+  localStorage.setItem(votedKey(eventId, p.id), '1'); // device guard (ok)
+  msg.innerHTML = '✅ 已提交，感謝你的投票！';
+  btn.disabled = true;
+};
 }
 
 function renderPollResult(p){
@@ -201,9 +196,38 @@ window.addEventListener('storage', (e)=>{
 });
 
 
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', async ()=>{
   initInfo();
   renderQuestions();
+
+    // === Load canonical event data from Firebase, then re-render ===
+  try {
+    const eventId = qsParam('event') || '';
+    if (eventId && window.EventData && typeof window.EventData.readEvent === 'function') {
+      const remote = await window.EventData.readEvent(eventId);
+      if (remote && remote.data) {
+        // update in-memory event/state and re-render visible sections
+        if (typeof ev === 'object') {
+          ev.id = remote.id;
+          ev.name = remote.name || ev.name || '';
+        }
+        if (typeof state === 'object') {
+          // replace fields with server values (preserve keys if missing remotely)
+          const incoming = remote.data || {};
+          // copy enumerable keys from incoming to state
+          Object.keys(incoming).forEach(k => { state[k] = incoming[k]; });
+        }
+
+        // re-render header / info / questions (poll boot below will use the updated state)
+        initInfo();
+        renderQuestions();
+      }
+    }
+  } catch (e) {
+    // keep page functional even if network fails
+    console.warn('[landing] failed to load event from RTDB:', e);
+  }
+
   document.getElementById('signupForm').addEventListener('submit', handleSignupSubmit);
 
   // === Poll boot ===

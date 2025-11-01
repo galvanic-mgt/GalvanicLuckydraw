@@ -1,38 +1,4 @@
-// === Persistent storage per-event ===
-const STORE_KEY='ldraw-events-v3';
-const SNAP_KEY='ldraw-snapshots-v1'; // for saved snapshots
-
-function genId(){ return 'e'+Math.floor(Date.now()+Math.random()*1e6).toString(36); }
-function loadAll(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{currentId:null,events:{}}; }catch{ return {currentId:null,events:{}}; } }
-function saveAll(o){ localStorage.setItem(STORE_KEY, JSON.stringify(o)); }
-function baseState(){
-  return {
-    people:[], remaining:[], winners:[],
-    bg:null, logo:null, banner:null,
-    pageSize:50, rosterPage:1, pages:[{id:1}], currentPage:1,
-    lastConfirmed:null, lastPick:null, currentBatch:[],
-    prizes:[], currentPrizeId:null,
-    eventInfo:{title:'',client:'',dateTime:'',venue:'',address:'',mapUrl:'',bus:'',train:'',parking:'',notes:''},
-    questions:[], rerolls:[],
-    // NEW ↓
-    polls: [
-      { id:'p1', question:'今晚最期待哪個環節？',
-        options:[{id:'o1',text:'抽獎'},{id:'o2',text:'表演'},{id:'o3',text:'美食'}],
-        votes:{} }
-    ],
-    currentPollId: 'p1'
-  };
-}
-
-function ensureInit(){
-  const all = loadAll();
-  if(!all.currentId){
-    const id = genId();
-    all.events[id] = { name: '預設活動', client: '', listed: true, data: baseState() };
-    all.currentId = id;
-    saveAll(all);
-  }
-}
+// ===== Lucky Draw Application =====
 
 // --- Event management helpers ---
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
@@ -40,30 +6,38 @@ function createEvent(name, client){
   const id = store.create(name, client);
   return id;
 }
-function cloneCurrentEvent(newName){
-  const curMeta = store.current();
-  const all = JSON.parse(localStorage.getItem('ldraw-events-v3')) || { currentId:null, events:{} };
-  const curData = all.events[curMeta.id]?.data || baseState();
-  const newId = genId();
-  all.events[newId] = {
-    name: newName || (curMeta.name + '（副本）'),
-    client: curMeta.client || '',
-    listed: (all.events[curMeta.id]?.listed !== false),
-    data: deepClone(curData)
-  };
-  all.currentId = newId;
-  localStorage.setItem('ldraw-events-v3', JSON.stringify(all));
-  return newId;
+// Cloud-only clone: duplicates current event into a new /events/<newId> in RTDB
+async function cloneCurrentEvent(finalName){
+  try {
+    // resolve source event id
+    const url = new URL(location.href);
+    const srcId = url.searchParams.get('event') || (window.store && window.store.current && window.store.current().id) || '';
+    if (!srcId) { alert('找不到目前的活動 ID，無法複製。'); return; }
+
+    // read source from RTDB
+    const src = await window.EventData.readEvent(srcId);
+    if (!src || !src.data) { alert('雲端讀取失敗，無法複製。'); return; }
+
+    // create new event with requested name (keep same client if available)
+    const meta = await window.EventData.readEventMeta(srcId);
+    const created = await window.EventData.createEvent(finalName || (src.name + '（副本）'), meta.client || '');
+    const newId = created.id;
+
+    // write cloned data
+    await window.EventData.writeEvent(newId, src.data);
+
+    // (optional) ensure meta name is exactly finalName
+    if (finalName) {
+      await window.EventData.patchEventMeta(newId, { name: finalName });
+    }
+
+    // switch UI to the new event (simple + robust)
+    location.search = `?event=${encodeURIComponent(newId)}`;
+  } catch (e) {
+    console.error('cloneCurrentEvent cloud error:', e);
+    alert('複製活動時發生錯誤。請稍後再試。');
+  }
 }
-
-// ===== Firebase (REST) tiny wrapper =====
-const FB = {
-  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← same URL as vote.js
-  get:   (p) => fetch(`${FB.base}${p}.json`).then(r=>r.json()),
-  put:   (p,b) => fetch(`${FB.base}${p}.json`, {method:'PUT',   body:JSON.stringify(b)}).then(r=>r.json()),
-  patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
-};
-
 
 function rebuildRemainingFromPeople(){
   const winnersSet = new Set(state.winners.map(w => `${w.name}||${w.dept||''}`));
@@ -99,31 +73,6 @@ function fireOnCards(container, engine, perCount=160) {
   const count = Math.max(60, Math.floor(perCount / Math.max(1, cards.length))); // smaller if many
   cards.forEach(card => fireAtElement(card, engine, count));
 }
-
-const store={
-  load(){ ensureInit(); const all=loadAll(); return all.events[all.currentId].data||baseState(); },
-  save(s){ const all=loadAll(); all.events[all.currentId].data=s; saveAll(all); },
-  list(){ ensureInit(); const all=loadAll();
-  return Object.entries(all.events).map(([id,v])=>({
-    id, name:v.name, client:v.client||'', listed: (v.listed !== false)
-  }));
-},
-
-  current(){ const all=loadAll(); const meta=all.events[all.currentId]||{name:'',client:''}; return {id:all.currentId,name:meta.name,client:meta.client}; },
-  switch(id){ const all=loadAll(); if(all.events[id]){ all.currentId=id; saveAll(all); return true;} return false; },
-  create(name, client){
-    const all = loadAll();
-    const id = genId();
-    all.events[id] = {
-      name: name || ('活動 ' + (Object.keys(all.events).length + 1)),
-      client: client || '',
-      listed: true,
-      data: baseState()
-    };
-    all.currentId = id; saveAll(all); return id;
-  },
-  renameCurrent(name,client){ const all=loadAll(); if(all.events[all.currentId]){ if(name) all.events[all.currentId].name=name; if(client!==undefined) all.events[all.currentId].client=client; saveAll(all);} }
-};
 
 // ===== Sync layer (same-device, multi-tab/window) =====
 let bc;
@@ -758,35 +707,6 @@ async function countdown(from=3, step=700){
   await showCountdownOverlayAligned(from, step, goAt);
 }
 
-
-
-// snapshots
-function loadSnaps(){ try{ return JSON.parse(localStorage.getItem(SNAP_KEY))||[]; }catch{ return []; } }
-function saveSnaps(list){ localStorage.setItem(SNAP_KEY, JSON.stringify(list)); }
-function addSnapshot(){
-  const cur=store.current(); const s=store.load();
-  const snap={ id: cur.id, name: cur.name, client: cur.client||'', when: new Date().toISOString(), data: s };
-  const list=loadSnaps(); list.unshift(snap); saveSnaps(list); renderSnapshots();
-}
-function renderSnapshots(){
-  if(!snapshotsTable) return;
-  const list=loadSnaps();
-  snapshotsTable.innerHTML='';
-  list.forEach((sn, idx)=>{
-    const tr=document.createElement('tr');
-    const tdWhen=document.createElement('td'); tdWhen.textContent=new Date(sn.when).toLocaleString();
-    const tdName=document.createElement('td'); tdName.textContent=sn.name;
-    const tdClient=document.createElement('td'); tdClient.textContent=sn.client||'—';
-    const tdOps=document.createElement('td');
-    const bOpen=document.createElement('button'); bOpen.className='btn'; bOpen.textContent='載入到當前活動'; bOpen.onclick=()=>{ store.save(sn.data); state=store.load(); renderAll(); };
-    const bDL=document.createElement('button'); bDL.className='btn'; bDL.textContent='下載 JSON'; bDL.onclick=()=>{ const blob=new Blob([JSON.stringify(sn.data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`snapshot_${idx}.json`; a.click(); URL.revokeObjectURL(url); };
-    const bDel=document.createElement('button'); bDel.className='btn danger'; bDel.textContent='刪除'; bDel.onclick=()=>{ const list=loadSnaps(); list.splice(idx,1); saveSnaps(list); renderSnapshots(); };
-    tdOps.append(bOpen,bDL,bDel);
-    tr.append(tdWhen,tdName,tdClient,tdOps);
-    snapshotsTable.appendChild(tr);
-  });
-}
-
 // QR
 function currentLandingURL(){ const cur=store.current().id; const base = location.origin + location.pathname.replace(/index\.html?$/,''); return `${base}landing.html?event=${encodeURIComponent(cur)}`; }
 
@@ -1168,15 +1088,13 @@ searchInput.addEventListener('input', ()=>{
 })();
 
 
-emClone.addEventListener('click', ()=>{
+emClone.addEventListener('click', async ()=>{
   const proposed = (emCloneName.value || '').trim();
-  const finalName = proposed || (`${store.current().name || '活動'}（副本）`);
-  cloneCurrentEvent(finalName);
-  state = store.load();
-  emCloneName.value = '';
-  renderAll();
-  setActivePage('pageEventsManage');
+  const finalName = proposed || (`${(window.store && window.store.current && window.store.current().name) || '活動'}（副本）`);
+  await cloneCurrentEvent(finalName);
+  // No local reload; page will navigate to ?event=<newId>
 });
+
 
 emSearch.addEventListener('input', renderEventsTable);
 
