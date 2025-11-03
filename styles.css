@@ -27,7 +27,7 @@ footer{opacity:.6;text-align:center;padding:10px}
 .stage{position:relative;min-height:60vh;border-radius:18px;background:radial-gradient(1200px 600px at 50% 0%,rgba(59,221,255,.18),transparent 60%),rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);overflow:hidden}
 .bg{position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(6px) brightness(.6);opacity:.6}
 .logo{position:absolute;left:16px;top:16px;z-index:2;max-width:200px;max-height:80px;opacity:.95}
-.stage-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100%;padding:24px 32px;text-align:center}
+.stage-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px 32px;text-align:center}
 .banner{width:100%;height:220px;background-size:contain;background-repeat:no-repeat;background-position:center;margin-bottom:16px;border-radius:12px}
 @media (min-width:1600px){ .banner{height:300px} }
 .prize-title{font-size:clamp(24px,2.6vw,52px);opacity:.95;margin:0 auto 14px;font-weight:800;}
@@ -76,36 +76,55 @@ body.public-mode #publicView .stage{min-height:100vh;border-radius:0;border:none
 .table th, .table td { padding:10px 12px; text-align:left }
 .table tr { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12) }
 
-/* Embedded stage inside CMS: scale neatly with the card width */
+
+/* ===== Embedded stage inside CMS (抽獎舞台) — single consolidated rule set ===== */
 #pageStage .stage {
+  /* keep aspect & avoid global min-height */
   aspect-ratio: 16 / 9;
   height: auto;
-  min-height: auto;            /* override global min-height:60vh */
+  min-height: auto;
   position: relative;
+
+  /* keep it centered and fixed-width within the card */
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0 auto;
 }
 
-/* Slightly smaller banner for the embedded stage */
+#pageStage .stage .stage-inner {
+  /* center content vertically/horizontally and scale padding responsively */
+  justify-content: center;
+  padding: clamp(12px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px);
+}
+
 #pageStage .banner {
   height: clamp(100px, 18vh, 220px);
 }
 
-/* Let the grid pack more flexibly on narrow CMS widths */
 #pageStage .batch-grid {
+  /* never overflow the card and keep items centered */
+  width: 100%;
+  max-width: 100%;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  justify-items: center;
+  align-content: start;
 }
 
-/* Tweak typography down a notch for the embedded stage */
-#pageStage .winner-card .name { 
+#pageStage .winner-card {
+  /* prevent layout stretch and wrap long names */
+  max-width: 100%;
+  word-break: break-word;
+}
+
+#pageStage .winner-card .name {
   font-size: clamp(28px, 3.2vw, 64px);
 }
-#pageStage .winner-card .dept { 
+#pageStage .winner-card .dept {
   font-size: clamp(14px, 1.8vw, 28px);
 }
 
-/* A touch less padding so it breathes on smaller widths */
-#pageStage .stage .stage-inner {
-  padding: clamp(12px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px);
-}
+
 
 body.public-mode .reroll-btn { display: none !important; }
 
@@ -129,7 +148,7 @@ body.public-mode .reroll-btn { display: none !important; }
 
 .prize-header .prize-title{
   margin:0;
-  line-height:3;           /* keep big title tight so centering is predictable */
+  line-height:1.15;           /* keep big title tight so centering is predictable */
 }
 
 .prize-header .stat{
@@ -282,53 +301,155 @@ body.public-mode.public-result #publicView #pollPublicRow{
 body.public-mode.public-result #publicView .stage-inner{
   justify-content:flex-start;
 }
-/* Tablet 控制模式：隱藏 Header 與 CMS */
-body.tablet-mode header{ display:none; }
-body.tablet-mode #cmsView{ display:none !important; }
-body.tablet-mode #publicView{ display:none !important; }
+/* ===== Tablet mode: true fullscreen & responsive ===== */
+body.tablet-mode { overflow:hidden; background:#0b0f1a; }
+body.tablet-mode header { display:none; }
+body.tablet-mode #cmsView,
+body.tablet-mode #publicView { display:none !important; }
 
-/* Tablet: make the stage full-bleed like Public */
-body.tablet-mode .container{
-  max-width: 100vw;
-  padding: 0;
+#tabletView {
+  display:flex !important;
+  width:100vw;
+  height:100vh;
+  padding:0;
+  margin:0;
+  align-items:center;
+  justify-content:center;
 }
 
-body.tablet-mode #tabletView{
-  display: block !important;          /* ensure it's visible when tab active */
+#tabletView .stage {
+  position:relative;
+  width:100vw;
+  height:100vh;
+  margin:0;
+  border-radius:0;
+  box-shadow:none;
+  background:transparent;
+  overflow:hidden;
 }
 
-body.tablet-mode #tabletView .card{
-  border: none;
-  border-radius: 0;
+#tabletView .stage .bg,
+#tabletView .stage #confetti3 {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
 }
 
-body.tablet-mode #tabletView .stage{
-  min-height: 100vh;                   /* fill the full viewport height */
-  border: none;                        /* remove the card frame look */
-  border-radius: 0;                    /* square corners like Public */
+#tabletView .stage .stage-inner {
+  position:relative;
+  z-index:2;
+  display:grid;
+  grid-template-rows:auto auto 1fr auto auto;
+  align-items:center;
+  justify-items:center;
+  width:100%;
+  height:100%;
+  padding:clamp(12px, 3vw, 48px);
+  gap:clamp(8px, 2vw, 24px);
 }
 
-body.tablet-mode #tabletView .stage .stage-inner{
-  padding: clamp(16px, 3vw, 28px) clamp(16px, 3.5vw, 32px);
+#tabletView .prize-title { font-size:clamp(22px, 4vw, 52px); text-align:center; }
+#tabletView .stat        { font-size:clamp(14px, 2.2vw, 20px); }
+
+#tabletView .batch-grid{
+  width:min(96vw, 1400px);
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(clamp(140px, 18vw, 280px), 1fr));
+  gap:clamp(8px, 2vw, 18px);
+  align-content:start;
+  justify-items:center;
 }
 
-/* Tablet: a BIG centered button under each winner’s name */
-#currentBatch3 .winner-card .tablet-cta {
-  margin-top: 12px;
-  font-size: clamp(18px, 2.2vw, 24px);
-  padding: 16px 20px;
-  width: min(92%, 520px);
-  text-align: center;
+#tabletView .winner-card{
+  font-size:clamp(14px, 2.2vw, 22px);
+  padding:clamp(8px, 1.8vw, 16px);
 }
 
-/* ==== Client role locks (UI only) ==== */
-body.client-mode #publicView,
-body.client-mode #tabletView { display: none !important; }
+#tabletView .logo{
+  max-width:min(30vw, 300px);
+  height:auto;
+  object-fit:contain;
+}
 
-body.client-mode #openFullStage,
-body.client-mode #fullscreen,
-body.client-mode #tabletFullscreen,
-body.client-mode #landingLink { display: none !important; }
+/* Top-right fullscreen button for tablet view */
+.tablet-fs-btn{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:6;
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.18);
+  backdrop-filter: blur(4px);
+}
 
-/* In client mode, de-emphasize edit-only widgets */
-body.client-mode .client-hide { display: none !important; }
+/* === SAFETY: When not in Public/Tablet, hide all .stage except the one in the CMS 抽獎舞台 tab === */
+body:not(.public-mode):not(.tablet-mode) .stage { 
+  display: none !important;
+}
+body:not(.public-mode):not(.tablet-mode) #pageStage .stage {
+  display: block !important;
+}
+
+/* Also ensure non-active views never show their stages */
+body:not(.public-mode)  #publicView  { display: none !important; }
+body:not(.tablet-mode)  #tabletView  { display: none !important; }
+
+/* Public view: make sure everything is visually centered */
+#publicView .stage .stage-inner { justify-content: center; }
+
+/* CMS stage: never let the grid overflow the card */
+#pageStage .batch-grid { max-width: 100%; justify-items: center; }
+
+/* Roster table: dense, one-line rows */
+#pageRoster .table th,
+#pageRoster .table td { padding: 6px 8px; vertical-align: middle; }
+
+#pageRoster .table input {
+  padding: 6px 8px;
+  height: 32px;
+}
+
+/* Keep name/department cells single-line and tidy */
+#pageRoster td:nth-child(2),
+#pageRoster td:nth-child(3) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* PUBLIC: keep everything visually centered top/bottom */
+#publicView .stage { min-height: 100vh; border-radius: 0; }
+#publicView .stage .stage-inner { justify-content: center; min-height: 80vh; }
+
+/* Remove stray canvas layering that caused corner confetti on CMS */
+#confetti2, #confetti3 {
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:40; /* below overlays, above content bg */
+}
+
+/* Huge CTA on tablet */
+.big-cta{
+  display:inline-block;
+  width:min(92vw, 1200px);
+  height:clamp(64px, 10vw, 120px);
+  font-size:clamp(22px, 4.2vw, 42px);
+  font-weight:900;
+  border-radius:18px;
+  background:var(--accent);
+  color:#012;
+  border:none;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+
+/* Roster: denser single-line rows (already partly in file; this tightens a bit more) */
+#pageRoster .table th, #pageRoster .table td { padding: 6px 8px; line-height: 1.15; }
+
+/* Subtle vertical centering correction for public stage */
+#publicView .stage .stage-inner {
+  padding-top: clamp(12px, 6vh, 64px);
+  padding-bottom: clamp(12px, 6vh, 64px);
+}

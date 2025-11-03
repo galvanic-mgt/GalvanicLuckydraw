@@ -6,21 +6,31 @@
   <title>Lucky Draw · CMS & Stage</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:,">
+<style>
+  /* roster sort buttons */
+  th .sort{font-size:12px; line-height:1; padding:0 4px; margin-left:4px; opacity:0.7}
+  th .sort.active{opacity:1; text-decoration:underline}
+</style>
 </head>
 <body>
-  <!-- === Login Gate (shows until signed in) === -->
-  <div id="loginGate" class="overlay" style="display:none; align-items:center; justify-content:center; backdrop-filter:blur(2px)">
-    <form id="loginForm" class="card" style="min-width:320px; max-width:420px; padding:16px">
-      <h3 style="margin:0 0 8px">登入系統</h3>
-      <div class="bar" style="flex-direction:column; gap:8px">
-        <input id="loginUser" placeholder="帳號 / Email" autofocus />
-        <input id="loginPass" type="password" placeholder="密碼" />
-        <button id="btnLogin" class="btn primary" type="submit">登入</button>
-      </div>
-      <p class="pill" style="margin-top:8px">提示：預設帳密為 <strong>admin / admin</strong>（可在「用戶管理」建立新用戶）</p>
-    </form>
-  </div>
-  <!-- === END Login Gate === -->
+              <!-- LOGIN OVERLAY (local-only) -->
+          <div id="loginGate" class="overlay" style="display:none">
+            <form id="loginForm" class="card" style="min-width:320px; background:#121a2b; padding:16px">
+              <h3 style="margin-top:0">登入</h3>
+              <label style="display:block; margin:8px 0">
+                帳號
+                <input id="loginUser" placeholder="admin" />
+              </label>
+              <label style="display:block; margin:8px 0">
+                密碼
+                <input id="loginPass" type="password" placeholder="admin" />
+              </label>
+              <div class="bar" style="margin-top:12px">
+                <button id="btnLogin" class="btn primary" type="submit">登入</button>
+              </div>
+            </form>
+          </div>
+
   <header>
     <div class="container row">
       <div class="tabs">
@@ -31,7 +41,6 @@
       <div class="bar" style="margin-left:auto">
         <a id="landingLink" class="btn primary" href="./landing.html" target="_blank" role="button">手機報名頁 ↗</a>
         <button id="fullscreen" class="btn" type="button">⛶ 全屏</button>
-        <button id="btnLogout" class="btn" type="button">↩︎ 登出</button>
       </div>
     </div>
   </header>
@@ -71,56 +80,48 @@
     <div class="overlay" id="overlay"><div class="count" id="count">3</div></div>
   </main>
 
-    <main class="container" id="tabletView" style="display:none">
-      <section class="card" style="padding:14px">
-        <div class="bar" style="justify-content:space-between; align-items:center">
-          <h3 style="margin:0">平板控制（舞台鏡像）</h3>
-          <div class="bar">
-            <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
-            <button id="tabletCountdown" class="btn primary" type="button">⏱️ 倒數抽獎</button>
-            <button id="tabletDraw" class="btn" type="button">🎲 即抽</button>
-            <button id="tabletFullscreen" class="btn" type="button">⛶ 全屏</button>
-          </div>
-        </div>
-      </section>
+ <main id="tabletView" style="display:none">
+  <section class="card stage">
+    <!-- Top-right fullscreen button (manual) -->
+    <button id="tabletFullscreen" class="btn tablet-fs-btn" type="button" title="全屏">⛶ 全屏</button>
 
-      <!-- A stage that mirrors CMS/Public -->
-      <section class="card stage" id="tabletStage">
-        <img id="logoEl3" class="logo" alt="logo" />
-        <div id="bgEl3" class="bg"></div>
-        <canvas id="confetti3"></canvas>
+    <img id="logoEl3" class="logo" alt="logo" />
+    <div id="bgEl3" class="bg"></div>
+    <canvas id="confetti3"></canvas>
 
-        <div class="stage-inner">
-          <div id="banner3" class="banner"></div>
+    <div class="stage-inner">
+      <div id="banner3" class="banner"></div>
 
-          <div class="row prize-header">
-            <div class="prize-title" id="publicPrize3">—</div>
-            <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
-          </div>
+      <div class="row prize-header">
+        <div class="prize-title" id="publicPrize3">—</div>
+        <span class="stat" id="prizeLeftInline3">此獎尚餘：0</span>
+      </div>
 
-          <!-- Winner cards (tablet). We’ll inject a BIG countdown button under each name via JS. -->
-          <div id="currentBatch3" class="batch-grid" data-mode="tablet"></div>
-          <!-- BIG single countdown button under the names grid (tablet) -->
-          <div class="bar" id="tabletCtaRow" style="justify-content:center; margin:12px 0 0">
-            <button id="tabletCountdownBig"
-                    class="btn primary"
-                    type="button"
-                    style="width:min(92%,720px); font-size:clamp(18px,2.2vw,24px); padding:16px 20px;">
-              ⏱️ 倒數抽獎
-            </button>
-          </div>
-          <div class="winners-list" id="winnersChips3"></div>
+      <!-- NEW: a huge countdown-draw button centered above the grid -->
+      <button id="tabletCountdown" class="big-cta" type="button">⏱️ 倒數抽獎</button>
 
-          <div class="bar" style="justify-content:center;margin-top:12px">
-            <span class="stat" id="statsRemain3">剩餘：0</span>
-            <span class="stat" id="statsWinners3">已得獎：0</span>
-          </div>
-        </div>
+      <div class="bar" style="justify-content:center;margin:8px 0">
+        <button id="tabletDraw" class="btn" type="button">🎲 即抽</button>
+      </div>
 
-        <!-- Tablet overlay for countdown -->
-        <div class="overlay" id="overlay3"><div class="count" id="count3">3</div></div>
-      </section>
-    </main>
+      <div id="currentBatch3" class="batch-grid"></div>
+      <div class="winners-list" id="winnersChips3"></div>
+
+      <!-- 控制列：把「批量」留在底部 -->
+      <div class="bar" style="justify-content:center;margin-top:12px">
+        <label>批量 <input type="number" id="tabletBatch" value="1" min="1" /></label>
+      </div>
+
+      <div class="bar" style="justify-content:center;margin-top:12px">
+        <span class="stat" id="statsRemain3">剩餘：0</span>
+        <span class="stat" id="statsWinners3">已得獎：0</span>
+      </div>
+    </div>
+    <!-- NEW: tablet countdown overlay -->
+    <div class="overlay" id="overlay3"><div class="count" id="count3">3</div></div>
+  </section>
+</main>
+
 
 
   <!-- CMS view -->
@@ -182,6 +183,35 @@
             <button id="saveEventInfo" class="btn primary" type="button">💾 儲存活動資訊</button>
           </div>
         </section>
+        
+        <section class="card subpage" id="pageUsers" style="display:none">
+          <h3>用戶管理（本機）</h3>
+          <div class="grid-2" style="margin-bottom:10px">
+            <div class="card" style="padding:12px">
+              <h4 style="margin:0 0 8px">新增用戶</h4>
+              <label>帳號 <input id="uNewUser" /></label>
+              <label>密碼 <input id="uNewPass" type="password" /></label>
+              <label>角色
+                <select id="uNewRole">
+                  <option value="client">客戶（僅名單）</option>
+                  <option value="admin">超級管理員</option>
+                </select>
+              </label>
+              <label id="uEventPickWrap">可存取活動 ID（逗號分隔） <input id="uEventPick" placeholder="例如：emgf1248, abcd..." /></label>
+              <div class="bar" style="margin-top:8px">
+                <button id="uCreate" class="btn primary" type="button">+ 建立</button>
+              </div>
+            </div>
+            <div class="card" style="padding:12px">
+              <h4 style="margin:0 0 8px">所有用戶</h4>
+              <table class="table">
+                <thead><tr><th>帳號</th><th>角色</th><th>活動可存取</th><th>操作</th></tr></thead>
+                <tbody id="uTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
 
         <!-- 名單 -->
         <section class="card subpage" id="pageRoster" style="display:none">
@@ -189,13 +219,13 @@
           <div class="row">
             <label class="stat">CSV 名單 <input type="file" id="csv" accept=".csv" /></label>
             <button id="preset" class="btn primary" type="button">載入 CSV</button>
-            <button id="exportCheckin" class="btn" type="button">匯出已報到名單</button>
-            <button id="exportSession" class="btn" type="button">匯出會話</button>
-            <label class="stat">導入會話 <input type="file" id="importSession" accept=".json" /></label>
+            <button id="exportCheckin"  type="button">匯出報到名單</button>
+            <button id="exportWinners"  type="button">匯出中獎名單（含桌位/獎品）</button>
           </div>
           <div class="bar">
             <input id="search" type="text" placeholder="搜尋姓名/部門" />
-            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="10" max="100" value="50" /></label>
+            <label class="stat">每頁人數 <input type="number" id="pageSize2" min="5" max="100" value="12" /></label>
+
             <button id="newPage" class="btn" type="button">+ 加新抽獎頁</button>
             <select id="pageSelect"></select>
           </div>
@@ -207,32 +237,23 @@
         </div>
 
         <table class="table" style="margin-top:8px">
-       <thead>
+        <thead>
           <tr>
-            <th style="min-width:120px">碼 <button class="sortBtn" data-field="code">↕</button></th>
-            <th style="min-width:200px">姓名 <button class="sortBtn" data-field="name">↕</button></th>
-            <th style="min-width:160px">部門 <button class="sortBtn" data-field="dept">↕</button></th>
-            <th style="min-width:120px">桌 <button class="sortBtn" data-field="table">↕</button></th>
-            <th style="min-width:120px">座 <button class="sortBtn" data-field="seat">↕</button></th>
-            <th style="min-width:120px">狀態 <button class="sortBtn" data-field="checkedIn">↕</button></th>
+            <th style="min-width:120px">碼 <button class="sort" data-key="code" data-dir="asc" title="升序">▲</button><button class="sort" data-key="code" data-dir="desc" title="降序">▼</button></th>
+            <th style="min-width:120px">姓名 <button class="sort" data-key="name" data-dir="asc" title="升序">▲</button><button class="sort" data-key="name" data-dir="desc" title="降序">▼</button></th>
+            <th style="min-width:120px">部門 <button class="sort" data-key="dept" data-dir="asc" title="升序">▲</button><button class="sort" data-key="dept" data-dir="desc" title="降序">▼</button></th>
+            <th style="min-width:120px">桌 <button class="sort" data-key="table" data-dir="asc" title="升序">▲</button><button class="sort" data-key="table" data-dir="desc" title="降序">▼</button></th>
+            <th style="min-width:120px">座</th>
+            <th style="min-width:120px">狀態</th>
+            <th style="min-width:200px">已抽中</th>
             <th style="min-width:200px">操作</th>
           </tr>
         </thead>
-           <tbody id="rosterRows"></tbody>
+
+          <tbody id="rosterRows"></tbody>
         </table>
 
-          <!-- Pager for roster -->
-          <div class="bar" id="rosterPager" style="justify-content:space-between; margin-top:8px">
-            <div class="pill" id="rosterCount">共 0 人 · 顯示 0–0</div>
-            <div class="bar">
-              <button id="prevPage" class="btn" type="button">上一頁</button>
-              <span class="pill" id="pageHint">第 1 / 1 頁</span>
-              <button id="nextPage" class="btn" type="button">下一頁</button>
-            </div>
-          </div>
-
-          </section>
-
+        </section>
 
         <!-- 獎品（匯入） -->
         <section class="card subpage" id="pagePrizes" style="display:none">
@@ -263,8 +284,8 @@
             <button id="confirm" class="btn success" type="button" disabled>✅ 上台確認</button>
             <button id="undo" class="btn" type="button" disabled>↩️ Undo</button>
             <button id="clearStage" class="btn" type="button">🧹 清空舞台名單</button>
-            <button id="exportWinners" class="btn" type="button">匯出得獎 CSV</button>
-            <button id="clearStage" class="btn warning" type="button">🧹 清空舞台名稱</button>
+            <button id="exportWinners" class="btn" type="button">匯出中獎名單（含桌位/獎品）</button>
+            <button id="clearBatch" class="btn warning" type="button">🧹 清空舞台名單</button>
                   <a id="openTablet" class="btn" href="#tablet">平板控制 ↗</a>
             <a id="openFullStage" class="btn" href="#" target="_blank">在新視窗開啟全屏舞台 ↗</a>
           </div>
@@ -424,32 +445,6 @@
           </table>
         </section>
 
-        <section class="card subpage" id="pageUsers" style="display:none">
-        <h3>用戶管理（Firebase 登入）</h3>
-        <div class="bar">
-          <input id="newUserEmail" placeholder="用戶 Email" />
-          <input id="newUserPassword" type="password" placeholder="密碼" />
-          <select id="newUserRole">
-            <option value="client">客戶用戶（僅看所屬活動）</option>
-            <option value="super">超級用戶（可管理全部）</option>
-          </select>
-          <button id="createUser" class="btn primary" type="button">+ 建立用戶</button>
-        </div>
-        <p class="pill">建立後將同步到 Firebase Authentication / Database</p>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>角色</th>
-              <th>授權活動（逗號分隔）</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="userTable"></tbody>
-        </table>
-      </section>
-
-
       </section>
     </div>
   </main>
@@ -459,33 +454,13 @@
   <!-- Optional XLSX reader (only needed if你要直接讀 .xlsx；不加也可用 CSV) -->
   
   <script src="./qrcode.min.js"></script>
-  <!-- SheetJS (XLSX) -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <!-- Firebase SDKs (Compat) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<!-- NEW: load login first -->
+<script src="./login.js"></script>
 
-  <!-- Initialize Firebase (fill in your project config) -->
-  <script>
-    // TODO: replace with your own config from Firebase Console
-    const firebaseConfig = {
-      apiKey: "AIzaSyDe_LfpjcAC5bdeiOAafUaen7gJAQDF1hg",
-      authDomain: "luckydrawpolls.firebaseapp.com",
-      databaseURL: "https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "luckydrawpolls",
-      storageBucket: "luckydrawpolls.firebasestorage.app",
-      messagingSenderId: "1027454770775",
-      appId: "1:1027454770775:web:8967887edba3695a43cd12"
-    };
-    window.fbApp = firebase.initializeApp(firebaseConfig);
-    window.rtdb  = firebase.database();
-  </script>
-
-  <script src="./eventData.js"></script>
-  <script src="./app.js"></script>
-  <script src="./login.js"></script>
-
-
+<!-- then the rest of your app -->
+<script src="./app.js"></script>
 </body>
 </html>
+

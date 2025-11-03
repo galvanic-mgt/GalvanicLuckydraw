@@ -1,43 +1,298 @@
-// ===== Lucky Draw Application =====
+// === Persistent storage per-event ===
+const STORE_KEY='ldraw-events-v3';
+const SNAP_KEY='ldraw-snapshots-v1'; // for saved snapshots
+
+function genId(){ return 'e'+Math.floor(Date.now()+Math.random()*1e6).toString(36); }
+function loadAll(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{currentId:null,events:{}}; }catch{ return {currentId:null,events:{}}; } }
+function saveAll(o){ localStorage.setItem(STORE_KEY, JSON.stringify(o)); }
+function baseState(){
+  return {
+    people:[], remaining:[], winners:[],
+    bg:null, logo:null, banner:null,
+    pageSize:12, pages:[{id:1}], currentPage:1,
+    lastConfirmed:null, lastPick:null, currentBatch:[],
+    prizes:[], currentPrizeId:null,
+    eventInfo:{title:'',client:'',dateTime:'',venue:'',address:'',mapUrl:'',bus:'',train:'',parking:'',notes:''},
+    questions:[], rerolls:[],
+    // NEW ↓
+    polls: [
+      { id:'p1', question:'今晚最期待哪個環節？',
+        options:[{id:'o1',text:'抽獎'},{id:'o2',text:'表演'},{id:'o3',text:'美食'}],
+        votes:{} }
+    ],
+    currentPollId: 'p1'
+  };
+}
+
+function ensureInit(){
+  const all = loadAll();
+  if(!all.currentId){
+    const id = genId();
+    all.events[id] = { name: '預設活動', client: '', listed: true, data: baseState() };
+    all.currentId = id;
+    saveAll(all);
+  }
+}
+/* === Countdown + confetti utilities (works for Public/CMS/Tablet) === */
+function startCountdown(overlayId, countId, seconds = 3, onDone){
+  const overlay = document.getElementById(overlayId);
+  const countEl = document.getElementById(countId);
+  if(!overlay || !countEl){ onDone && onDone(); return; }
+
+  overlay.classList.add('show');
+  let n = seconds;
+  countEl.textContent = n;
+
+  const tick = () => {
+    n -= 1;
+    if(n > 0){ countEl.textContent = n; setTimeout(tick, 800); }
+    else {
+      overlay.classList.remove('show');
+      onDone && onDone();
+    }
+  };
+  setTimeout(tick, 800);
+}
+
+/* tiny confetti (no library): blasts from a DOM element into a <canvas> */
+function blastConfettiAt(el, canvasId){
+  const c = document.getElementById(canvasId);
+  if(!c || !el) return;
+
+  const ctx = c.getContext('2d');
+  // size canvas to viewport (fixed/absolute canvases in your HTML)
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  c.width  = c.clientWidth  * dpr;
+  c.height = c.clientHeight * dpr;
+  ctx.scale(dpr, dpr);
+
+  const rect = el.getBoundingClientRect();
+  const origin = { 
+    x: rect.left + rect.width/2, 
+    y: rect.top  + rect.height/2 
+  };
+
+  const particles = Array.from({length: 80}, () => ({
+    x: origin.x, y: origin.y,
+    vx: (Math.random()*2-1) * 8,
+    vy: (Math.random()*-1) * 10 - 4,
+    g:  0.35 + Math.random() * 0.2,
+    life: 50 + Math.random()*20,
+    size: 2 + Math.random()*3,
+    color: `hsl(${Math.floor(Math.random()*360)},90%,60%)`
+  }));
+
+  let raf;
+  const animate = () => {
+    ctx.clearRect(0, 0, c.clientWidth, c.clientHeight);
+    let alive = 0;
+    particles.forEach(p => {
+      if (p.life > 0){
+        alive++;
+        p.vy += p.g;
+        p.x  += p.vx;
+        p.y  += p.vy;
+        p.life -= 1;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      }
+    });
+    if(alive > 0) raf = requestAnimationFrame(animate);
+  };
+  cancelAnimationFrame(raf);
+  animate();
+}
+
+/* find the newest winner cards (the ones just drawn) */
+function latestWinnerCards(containerId){
+  const grid = document.getElementById(containerId);
+  if(!grid) return [];
+  // pick last N cards (heuristic: last row)
+  const all = Array.from(grid.querySelectorAll('.winner-card'));
+  return all.slice(-Math.min(all.length, 6));
+}
+
 
 // --- Event management helpers ---
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 function createEvent(name, client){
-  const id = store.create(name, client);
+  const all = loadAll();
+  const id = genId();
+  all.events[id] = {
+    name: name || ('活動 ' + (Object.keys(all.events).length + 1)),
+    client: client || '',
+    listed: true,
+    data: baseState()
+  };
+  all.currentId = id; 
+  saveAll(all);
+  // NEW: cloud mirror
+  cloudUpsertEventMeta(id);
   return id;
 }
-// Cloud-only clone: duplicates current event into a new /events/<newId> in RTDB
-async function cloneCurrentEvent(finalName){
-  try {
-    // resolve source event id
-    const url = new URL(location.href);
-    const srcId = url.searchParams.get('event') || (window.store && window.store.current && window.store.current().id) || '';
-    if (!srcId) { alert('找不到目前的活動 ID，無法複製。'); return; }
+function cloneCurrentEvent(newName){
+  const curMeta = store.current();
+  const all = JSON.parse(localStorage.getItem('ldraw-events-v3')) || { currentId:null, events:{} };
+  const curData = all.events[curMeta.id]?.data || baseState();
+  const newId = genId();
+  all.events[newId] = {
+    name: newName || (curMeta.name + '（副本）'),
+    client: curMeta.client || '',
+    listed: (all.events[curMeta.id]?.listed !== false),
+    data: deepClone(curData)
+  };
+  all.currentId = newId;
+  localStorage.setItem('ldraw-events-v3', JSON.stringify(all));
+  return newId;
+}
 
-    // read source from RTDB
-    const src = await window.EventData.readEvent(srcId);
-    if (!src || !src.data) { alert('雲端讀取失敗，無法複製。'); return; }
+// ===== Countdown + Confetti helpers =====
+const confettiEngines = new Map(); // canvasId -> engine
 
-    // create new event with requested name (keep same client if available)
-    const meta = await window.EventData.readEventMeta(srcId);
-    const created = await window.EventData.createEvent(finalName || (src.name + '（副本）'), meta.client || '');
-    const newId = created.id;
+function runCountdown(where){ // 'public' | 'cms' | 'tablet'
+  const overlayId = where === 'public' ? 'overlay' : where === 'cms' ? 'overlay2' : 'overlay3';
+  const countId   = where === 'public' ? 'count'   : where === 'cms' ? 'count2'   : 'count3';
+  const canvasId  = where === 'public' ? 'confetti': where === 'cms' ? 'confetti2': 'confetti3';
 
-    // write cloned data
-    await window.EventData.writeEvent(newId, src.data);
+  const overlay = document.getElementById(overlayId);
+  const countEl = document.getElementById(countId);
+  if(!overlay || !countEl) return;
 
-    // (optional) ensure meta name is exactly finalName
-    if (finalName) {
-      await window.EventData.patchEventMeta(newId, { name: finalName });
+  let n = 3;
+  overlay.classList.add('show');
+  countEl.textContent = n;
+
+  const tick = setInterval(()=>{
+    n -= 1;
+    if(n > 0){
+      countEl.textContent = n;
+      countEl.classList.remove('pump'); // retrigger the little animation
+      void countEl.offsetWidth;
+      countEl.classList.add('pump');
+    } else {
+      clearInterval(tick);
+      overlay.classList.remove('show');
+      // Do the actual draw now
+      drawBatch(where);
+      // Confetti burst on the correct canvas
+      burstConfetti(canvasId);
     }
+  }, 1000);
+}
 
-    // switch UI to the new event (simple + robust)
-    location.search = `?event=${encodeURIComponent(newId)}`;
-  } catch (e) {
-    console.error('cloneCurrentEvent cloud error:', e);
-    alert('複製活動時發生錯誤。請稍後再試。');
+function burstConfetti(canvasId){
+  // kill other confetti engines so we never get "extra" fireworks
+  for (const [id, eng] of confettiEngines.entries()){
+    if (id !== canvasId && eng && eng.reset) eng.reset();
+  }
+
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+
+  // lightweight, canvas-only confetti (no external lib)
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width  = canvas.offsetWidth;
+  const H = canvas.height = canvas.offsetHeight;
+
+  const flakes = Array.from({length: 150}, ()=>({
+    x: Math.random()*W,
+    y: -10 - Math.random()*H*0.4,
+    r: 2 + Math.random()*4,
+    vx: -1 + Math.random()*2,
+    vy: 2 + Math.random()*3,
+    a: Math.random()*Math.PI*2
+  }));
+
+  let raf;
+  function step(){
+    ctx.clearRect(0,0,W,H);
+    flakes.forEach(f=>{
+      f.x += f.vx; f.y += f.vy; f.a += 0.05;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = `hsl(${(f.y/3)%360}, 90%, 60%)`;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r*(0.7+0.3*Math.sin(f.a)), 0, Math.PI*2);
+      ctx.fill();
+    });
+    raf = requestAnimationFrame(step);
+  }
+  step();
+
+  // auto stop after 2.5s
+  const stop = ()=>{
+    cancelAnimationFrame(raf);
+    ctx.clearRect(0,0,W,H);
+  };
+  setTimeout(stop, 2500);
+
+  confettiEngines.set(canvasId, { reset: stop });
+}
+
+// ===== Local users (super-simple, localStorage) =====
+const USERS_KEY = 'ldraw-users-v1';
+
+function loadUsers(){
+  try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
+  catch { return []; }
+}
+function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
+
+// Ensure a default admin admin/admin exists so you can get in
+function ensureDefaultAdmin(){
+  const list = loadUsers();
+  if (!list.some(u => u.user === 'admin')) {
+    list.push({ user:'admin', pass:'admin', role:'admin', events:'*' });
+    saveUsers(list);
   }
 }
+
+// Return the matched account or null
+function authUser(user, pass){
+  const list = loadUsers();
+  return list.find(u => u.user === user && u.pass === pass) || null;
+}
+
+// ===== Firebase (REST) tiny wrapper =====
+const FB = {
+  base: 'https://luckydrawpolls-default-rtdb.asia-southeast1.firebasedatabase.app', // ← same URL as vote.js
+  get:   (p) => fetch(`${FB.base}${p}.json`).then(r=>r.json()),
+  put:   (p,b) => fetch(`${FB.base}${p}.json`, {method:'PUT',   body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: (p,b) => fetch(`${FB.base}${p}.json`, {method:'PATCH', body:JSON.stringify(b)}).then(r=>r.json())
+};
+
+// --- Cloud mirror for 活動管理 (events list) ---
+async function cloudUpsertEventMeta(id){
+  const all = loadAll(); const ev = all.events[id];
+  if (!ev) return;
+  const meta = { name: ev.name || '（未命名）', client: ev.client || '', listed: ev.listed !== false };
+  // Store meta under the event, and also in a flat index for listing
+  await FB.patch(`/events/${id}/meta`, meta).catch(()=>{});
+  await FB.put(`/events_index/${id}`, meta).catch(()=>{});
+}
+
+async function cloudDeleteEvent(id){
+  await FB.put(`/events/${id}`, null).catch(()=>{});
+  await FB.put(`/events_index/${id}`, null).catch(()=>{});
+}
+
+async function cloudPullEventsIndexIntoLocal(){
+  const idx = await FB.get(`/events_index`) || {};
+  const all = loadAll();
+  Object.entries(idx).forEach(([id, meta])=>{
+    if (!all.events[id]) {
+      all.events[id] = { name: meta?.name || '（未命名）', client: meta?.client || '', listed: meta?.listed !== false, data: baseState() };
+    } else {
+      // keep local meta aligned
+      all.events[id].name   = meta?.name   ?? all.events[id].name;
+      all.events[id].client = meta?.client ?? all.events[id].client;
+      all.events[id].listed = (meta?.listed !== false);
+    }
+  });
+  if (!all.currentId) all.currentId = Object.keys(all.events)[0] || all.currentId;
+  saveAll(all);
+}
+
+
 
 function rebuildRemainingFromPeople(){
   const winnersSet = new Set(state.winners.map(w => `${w.name}||${w.dept||''}`));
@@ -51,19 +306,19 @@ function fireAtElement(el, engine, count=180) {
   let x = r.left + r.width / 2;
   let y = r.top  + r.height / 2;
 
-  if (engine === confettiPublic) {
-    x += scrollX; 
-    y += scrollY;     // viewport-sized
-  } else if (engine === confettiStage) {
-    const stageEl = document.querySelector('#pageStage .stage'); // use stage as origin
-    if (stageEl) {
-      const sr = stageEl.getBoundingClientRect();
-      x -= sr.left;
-      y -= sr.top;    // element-sized canvas local coords
-    }
+  // If the engine is viewport-based (no host), pass window coords
+  if (!engine.hostEl) {
+    x += scrollX;
+    y += scrollY;
+  } else {
+    // Translate to the engine's host local coords
+    const sr = engine.hostEl.getBoundingClientRect();
+    x -= sr.left;
+    y -= sr.top;
   }
   engine.fire(x, y, count);
 }
+
 
 
 // Convenience: fire on all winner cards in a container
@@ -73,6 +328,40 @@ function fireOnCards(container, engine, perCount=160) {
   const count = Math.max(60, Math.floor(perCount / Math.max(1, cards.length))); // smaller if many
   cards.forEach(card => fireAtElement(card, engine, count));
 }
+
+const store={
+  load(){ ensureInit(); const all=loadAll(); return all.events[all.currentId].data||baseState(); },
+  save(s){ const all=loadAll(); all.events[all.currentId].data=s; saveAll(all); },
+  list(){ ensureInit(); const all=loadAll();
+  return Object.entries(all.events).map(([id,v])=>({
+    id, name:v.name, client:v.client||'', listed: (v.listed !== false)
+  }));
+},
+
+  current(){ const all=loadAll(); const meta=all.events[all.currentId]||{name:'',client:''}; return {id:all.currentId,name:meta.name,client:meta.client}; },
+  switch(id){ const all=loadAll(); if(all.events[id]){ all.currentId=id; saveAll(all); return true;} return false; },
+  create(name, client){
+    const all = loadAll();
+    const id = genId();
+    all.events[id] = {
+      name: name || ('活動 ' + (Object.keys(all.events).length + 1)),
+      client: client || '',
+      listed: true,
+      data: baseState()
+    };
+    all.currentId = id; saveAll(all); cloudUpsertEventMeta(id); return id;
+  },
+  renameCurrent(name, client){
+    const all = loadAll();
+    if (all.events[all.currentId]) {
+      if (name)   all.events[all.currentId].name   = name;
+      if (client !== undefined) all.events[all.currentId].client = client;
+      saveAll(all);
+      // NEW: cloud mirror
+      cloudUpsertEventMeta(all.currentId);
+    }
+  }
+  };
 
 // ===== Sync layer (same-device, multi-tab/window) =====
 let bc;
@@ -108,6 +397,7 @@ if (bc) {
     if (d.type === 'TICK') {
       state = store.load();
       renderAll();
+  try{ if (typeof updateRosterSortIndicators === 'function') updateRosterSortIndicators(); }catch{}
 
     } else if (d.type === 'CELEBRATE') {
       if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
@@ -142,52 +432,28 @@ if (bc) {
 
 
     } else if (d.type === 'REROLL_BURST') {
-  const idx = d.at || 0;
-
-  // Public stage
-  const pubCards = document.querySelectorAll('#currentBatch .winner-card');
-  if (pubCards[idx] && typeof confettiPublic !== 'undefined' && confettiPublic) {
-    fireAtElement(pubCards[idx], confettiPublic, 140);
-  }
-
-  // CMS embedded stage
-  const cmsCards = document.querySelectorAll('#currentBatch2 .winner-card');
-  if (cmsCards[idx] && typeof confettiStage !== 'undefined' && confettiStage) {
-    fireAtElement(cmsCards[idx], confettiStage, 140);
-  }
-
-  // Tablet stage
-  const tbCards = document.querySelectorAll('#currentBatch3 .winner-card');
-  if (tbCards[idx] && typeof confettiTablet !== 'undefined' && confettiTablet) {
-    fireAtElement(tbCards[idx], confettiTablet, 140);
-  }
-
-
-  } else if (d.type === 'DRAW_BURST') {
-    // Public stage
-    setTimeout(()=>{ 
-      const el = document.getElementById('currentBatch'); 
-      if (el && typeof confettiPublic !== 'undefined' && confettiPublic) {
-        fireOnCards(el, confettiPublic); 
+      // Public
+      if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
+      const idx = d.at || 0;
+      const cards = document.querySelectorAll('#currentBatch .winner-card');
+        if (cards[idx]) fireAtElement(cards[idx], confettiPublic, 140);
       }
-    }, 10);
-
-    // CMS embedded stage
-    setTimeout(()=>{ 
-      const el = document.getElementById('currentBatch2'); 
-      if (el && typeof confettiStage !== 'undefined' && confettiStage) {
-        fireOnCards(el, confettiStage); 
+      // Tablet
+      if (document.body.classList.contains('tablet-mode')) {
+        const idx = d.at || 0;
+        const cards = document.querySelectorAll('#currentBatch3 .winner-card');
+        if (cards[idx]) fireAtElement(cards[idx], confettiTablet, 140);
       }
-    }, 10);
 
-    // Tablet stage
-    setTimeout(()=>{ 
-      const el = document.getElementById('currentBatch3'); 
-      if (el && typeof confettiTablet !== 'undefined' && confettiTablet) {
-        fireOnCards(el, confettiTablet); 
+    } else if (d.type === 'DRAW_BURST') {
+      // Public
+      if (document.body.classList.contains('public-mode') || (publicView && publicView.style.display !== 'none')) {
+        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 10);
       }
-    }, 10);
-
+      // Tablet
+      if (document.body.classList.contains('tablet-mode')) {
+        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch3'), confettiTablet); }, 10);
+  }
 
       } else if (d.type === 'SHOW_POLL_RESULT') {
   // Only the Public screen should respond
@@ -205,40 +471,12 @@ if (bc) {
   }
 
 
-        } else if (d.type === 'COUNTDOWN') {
+    } else if (d.type === 'COUNTDOWN') {
       const { from=3, step=700, goAt } = d;
-
-      // Show the synced countdown on every surface that exists
-      const jobs = [];
-      if (document.getElementById('overlay'))  jobs.push(showCountdownOverlayAligned(from, step, goAt, 'public'));
-      if (document.getElementById('overlay2')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'cms'));
-      if (document.getElementById('overlay3')) jobs.push(showCountdownOverlayAligned(from, step, goAt, 'tablet'));
-
-      Promise.all(jobs).then(()=>{
-        // After countdown completes, pop confetti on all surfaces that exist
-        setTimeout(()=>{
-          const pub = document.getElementById('currentBatch');
-          if (pub && typeof confettiPublic !== 'undefined' && confettiPublic) {
-            fireOnCards(pub, confettiPublic);
-          }
-        }, 30);
-
-        setTimeout(()=>{
-          const cms = document.getElementById('currentBatch2');
-          if (cms && typeof confettiStage !== 'undefined' && confettiStage) {
-            fireOnCards(cms, confettiStage);
-          }
-        }, 30);
-
-        setTimeout(()=>{
-          const tab = document.getElementById('currentBatch3');
-          if (tab && typeof confettiTablet !== 'undefined' && confettiTablet) {
-            fireOnCards(tab, confettiTablet);
-          }
-        }, 30);
+      showCountdownOverlayAligned(from, step, goAt, 'public').then(()=>{
+        setTimeout(()=>{ fireOnCards(document.getElementById('currentBatch'), confettiPublic); }, 30);
       });
     }
-
   };
 }
 
@@ -267,14 +505,11 @@ async function showCountdownOverlayAligned(from=3, step=700, goAt, scope='auto')
 
   if (scope === 'public') { ov = $('overlay');  cnt = $('count');  }
   else if (scope === 'cms') { ov = $('overlay2'); cnt = $('count2'); }
-  else if (scope === 'tablet') { ov = $('overlay3'); cnt = $('count3'); }
   else {
-    const isTablet = document.body.classList.contains('tablet-mode');
     const publicVisible = document.body.classList.contains('public-mode')
       || (publicView && publicView.style.display !== 'none');
-    if (isTablet)      { ov=$('overlay3'); cnt=$('count3'); }
-    else if (publicVisible) { ov=$('overlay');  cnt=$('count');  }
-    else               { ov=$('overlay2'); cnt=$('count2'); }
+    if (publicVisible) { ov=$('overlay'); cnt=$('count'); }
+    else { ov=$('overlay2'); cnt=$('count2'); }
   }
 
   if(!ov || !cnt) return;
@@ -355,6 +590,8 @@ function makeConfettiEngine(canvas, hostEl=null){
       // Ensure it fills the stage box
       canvas.style.position = 'absolute';
       canvas.style.inset = '0';
+      canvas.style.pointerEvents = 'none';
+      canvas.style.zIndex = '5';
     } else {
       canvas.width  = innerWidth;
       canvas.height = innerHeight;
@@ -408,11 +645,12 @@ function makeConfettiEngine(canvas, hostEl=null){
   }
   requestAnimationFrame(tick);
 
-  return { fire, resize };
+  return { fire, resize, hostEl };
 }
 
 let confettiPublic = null;
 let confettiStage  = null;
+let confettiTablet = null;
 
 // Fix the typo and unify celebration:
 function celebrateAt(rectLike=null){
@@ -435,12 +673,13 @@ function fireConfetti(){
 
 // --- State & DOM refs ---
 let state;
-let publicView, cmsView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
+let publicView, cmsView, tabletView, overlay, countEl, publicPrizeEl, statsRemain, statsWinners, statsPrizeLeft, batchGrid, winnersChips;
+
 let bgEl, logoEl, bannerEl;
 
 // Embedded stage refs (pageStage)
 let publicPrize2, batchGrid2, winnersChips2, bgEl2, logoEl2, bannerEl2, confetti2, ctx2, confettiParticles2=[];
-
+let bgEl3, bannerEl3, logoEl3;
 let eventList, newEventName, newClientName, addEventBtn;
 let evTitle, evClient, evDateTime, evVenue, evAddress, evMapUrl, evBus, evTrain, evParking, evNotes;
 let currentEventName, currentClient, currentIdLabel;
@@ -470,106 +709,69 @@ let landingURL, copyURL, openLanding, qrBox, downloadQR, landingLink, openFullSt
 function currentPrize(){ return state.prizes.find(p=>p.id===state.currentPrizeId)||null; }
 function prizeLeft(p){ return Math.max(0,(p?.quota||0)-(p?.won?.length||0)); }
 
-function renderBG(){ [bgEl,bgEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
-function renderLogo(){ [logoEl,logoEl2].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
-function renderBanner(){ [bannerEl,bannerEl2].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
+function renderBG(){ [bgEl,bgEl2,bgEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.bg?`url(${state.bg})`:''; }); }
+function renderLogo(){ [logoEl,logoEl2,logoEl3].forEach(el=>{ if(!el) return; if(state.logo){ el.src=state.logo; el.style.display='block'; } else { el.style.display='none'; } }); }
+function renderBanner(){ [bannerEl,bannerEl2,bannerEl3].forEach(el=>{ if(el) el.style.backgroundImage=state.banner?`url(${state.banner})`:'none'; }); }
 
 function renderBatchTargets(targetGrid){
   targetGrid.innerHTML='';
   (state.currentBatch||[]).forEach((w,i)=>{
-    const card=document.createElement('div'); 
-    card.className='winner-card';
-
-    const n=document.createElement('div'); 
-    n.className='name'; 
-    n.textContent=w.name;
-
-    const d=document.createElement('div'); 
-    d.className='dept'; 
-    d.textContent=w.dept||'';
-
-    // Reroll button (kept for CMS/Public)
-    const rer=document.createElement('button'); 
-    rer.textContent='缺席重抽'; 
-    rer.className='btn primary reroll-btn'; 
-    rer.style.position='absolute'; 
-    rer.style.bottom='8px'; 
-    rer.style.right='8px';
+    const card=document.createElement('div'); card.className='winner-card';
+    const n=document.createElement('div'); n.className='name'; n.textContent=w.name;
+    const d=document.createElement('div'); d.className='dept'; d.textContent=w.dept||'';
+    const rer=document.createElement('button'); rer.textContent='缺席重抽'; rer.className='btn primary reroll-btn'; 
+    rer.style.position='absolute'; rer.style.bottom='8px'; rer.style.right='8px';
     rer.onclick=()=>rerollAt(i);
-
-    card.append(n,d);
-
-
-    card.appendChild(rer);
-    targetGrid.appendChild(card);
+    card.append(n,d,rer); targetGrid.appendChild(card);
+    
   });
 }
-// --- role helper (block client from event mgmt even if they unhide UI) ---
-function _isClient(){
-  try { const a = JSON.parse(localStorage.getItem('ldraw-auth-v1')); return a && a.role === 'client'; }
-  catch { return false; }
-}
-
 function updatePublicPanel(){
   const p = currentPrize();
 
-  // ——— Prize title (Public + CMS)
-  [publicPrizeEl, publicPrize2].forEach(el=>{
+  // Title (now for 3 stages: embedded/public/tablet)
+  [publicPrizeEl, publicPrize2, publicPrize3].forEach(el=>{
     if (el) el.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
   });
 
+  // Global stats
   const remainText  = `剩餘：${state.remaining.length}`;
   const winnersText = `已得獎：${state.winners.length}`;
 
-  // ——— Stats (Public + CMS)
   [document.getElementById('statsRemain'),
-   document.getElementById('statsRemain2')].forEach(el => { if (el) el.textContent = remainText; });
+   document.getElementById('statsRemain2'),
+   document.getElementById('statsRemain3')
+  ].forEach(el => { if (el) el.textContent = remainText; });
 
   [document.getElementById('statsWinners'),
-   document.getElementById('statsWinners2')].forEach(el => { if (el) el.textContent = winnersText; });
+   document.getElementById('statsWinners2'),
+   document.getElementById('statsWinners3')
+  ].forEach(el => { if (el) el.textContent = winnersText; });
 
+  // Prize-left inline badges (and keep your old bottom stat if present)
   const leftText = `此獎尚餘：${p ? prizeLeft(p) : 0}`;
-  // Update both the new inline badges and (if you keep it) the old bottom stat
   [document.getElementById('prizeLeftInline'),
    document.getElementById('prizeLeftInline2'),
-   statsPrizeLeft].forEach(el => { if (el) el.textContent = leftText; });
+   document.getElementById('prizeLeftInline3'),
+   // keep your old bottom stat if the var exists
+   (typeof statsPrizeLeft !== 'undefined' ? statsPrizeLeft : null)
+  ].forEach(el => { if (el) el.textContent = leftText; });
 
-  // ===== ADD: Tablet mirrors (title + stats) =====
-  const publicPrize3 = document.getElementById('publicPrize3');
-  if (publicPrize3) publicPrize3.textContent = p ? `現正抽獎：${p.name}（名額 ${p.quota}）` : '—';
-
-  const sr3 = document.getElementById('statsRemain3');
-  if (sr3) sr3.textContent = remainText;
-
-  const sw3 = document.getElementById('statsWinners3');
-  if (sw3) sw3.textContent = winnersText;
-
-  const pl3 = document.getElementById('prizeLeftInline3');
-  if (pl3) pl3.textContent = leftText;
-  // ===== END tablet mirrors =====
-
+  // (You were computing html, but clearing chips — preserve that behavior and include tablet)
   const html = p ? p.won.slice(-16).map(w=>`<div class="chip">${w.name} · ${w.dept||''}</div>`).join('') : '';
-  // no bottom chips needed
   if (winnersChips)  winnersChips.innerHTML  = '';
   if (winnersChips2) winnersChips2.innerHTML = '';
-  // ===== ADD: clear tablet chips too (keep consistent) =====
-  const winnersChips3 = document.getElementById('winnersChips3');
-  if (winnersChips3) winnersChips3.innerHTML = '';
-  // =====
+  if (typeof winnersChips3 !== 'undefined' && winnersChips3) winnersChips3.innerHTML = '';
 
-  // Branding / visuals
+  // Visuals
   renderBanner();
 
-  // Winner cards (grids)
+  // Batch target grids (support all three)
   if (batchGrid)  renderBatchTargets(batchGrid);
   if (batchGrid2) renderBatchTargets(batchGrid2);
-  
-  // ===== ADD: render tablet grid =====
-  const batchGrid3 = document.getElementById('currentBatch3');
-  if (batchGrid3) renderBatchTargets(batchGrid3);
-  // =====
+  if (typeof batchGrid3 !== 'undefined' && batchGrid3) renderBatchTargets(batchGrid3);
 
-  // show/refresh the current poll’s QR on the public stage
+  // Show/refresh current poll’s QR on the public stage
   renderActivePollQR();
 
   // Center Public view on the poll QR when requested
@@ -636,7 +838,6 @@ function drawOne(){ if(state.remaining.length===0) return null; const person=sam
 fireOnCards(document.getElementById('currentBatch2'), confettiStage);
 // ask the public window to burst on its cards
 try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
-fireOnCards(document.getElementById('currentBatch3'), (typeof confettiTablet!=='undefined'?confettiTablet:null));
 return person;
 }
 function drawBatch(n){
@@ -649,9 +850,8 @@ store.save(state); renderAll();
 fireOnCards(document.getElementById('currentBatch2'), confettiStage);
 // ask the public window to burst on its cards
 try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
-fireOnCards(document.getElementById('currentBatch3'), (typeof confettiTablet!=='undefined'?confettiTablet:null));
-}
 
+}
 function rerollAt(index){
   const prize=currentPrize(); if(!prize) return;
   if(!state.currentBatch[index]) return;
@@ -663,6 +863,7 @@ function rerollAt(index){
   }
   addWinnerRecords(prize, newPerson); state.currentBatch[index]=newPerson; rebuildRemainingFromPeople(); store.save(state); renderAll();
 
+  
   // CMS embedded
 const cmsCards = document.querySelectorAll('#currentBatch2 .winner-card');
 fireAtElement(cmsCards[index], confettiStage, 140);
@@ -671,13 +872,6 @@ fireAtElement(cmsCards[index], confettiStage, 140);
 try { 
   bc && bc.postMessage({ type:'REROLL_BURST', at:index, ts: Date.now() }); 
 } catch {}
-
-// Tablet stage confetti (if the tablet stage is present)
-const tbCards = document.querySelectorAll('#currentBatch3 .winner-card');
-if (tbCards[index] && typeof confettiTablet !== 'undefined' && confettiTablet) {
-  fireAtElement(tbCards[index], confettiTablet, 140);
-}
-
 // --- LOG this reroll ---
 state.rerolls = state.rerolls || [];
 const log = {
@@ -705,6 +899,35 @@ async function countdown(from=3, step=700){
 
   // Show local overlay (CMS or Public) but align to goAt
   await showCountdownOverlayAligned(from, step, goAt);
+}
+
+
+
+// snapshots
+function loadSnaps(){ try{ return JSON.parse(localStorage.getItem(SNAP_KEY))||[]; }catch{ return []; } }
+function saveSnaps(list){ localStorage.setItem(SNAP_KEY, JSON.stringify(list)); }
+function addSnapshot(){
+  const cur=store.current(); const s=store.load();
+  const snap={ id: cur.id, name: cur.name, client: cur.client||'', when: new Date().toISOString(), data: s };
+  const list=loadSnaps(); list.unshift(snap); saveSnaps(list); renderSnapshots();
+}
+function renderSnapshots(){
+  if(!snapshotsTable) return;
+  const list=loadSnaps();
+  snapshotsTable.innerHTML='';
+  list.forEach((sn, idx)=>{
+    const tr=document.createElement('tr');
+    const tdWhen=document.createElement('td'); tdWhen.textContent=new Date(sn.when).toLocaleString();
+    const tdName=document.createElement('td'); tdName.textContent=sn.name;
+    const tdClient=document.createElement('td'); tdClient.textContent=sn.client||'—';
+    const tdOps=document.createElement('td');
+    const bOpen=document.createElement('button'); bOpen.className='btn'; bOpen.textContent='載入到當前活動'; bOpen.onclick=()=>{ store.save(sn.data); state=store.load(); renderAll(); };
+    const bDL=document.createElement('button'); bDL.className='btn'; bDL.textContent='下載 JSON'; bDL.onclick=()=>{ const blob=new Blob([JSON.stringify(sn.data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`snapshot_${idx}.json`; a.click(); URL.revokeObjectURL(url); };
+    const bDel=document.createElement('button'); bDel.className='btn danger'; bDel.textContent='刪除'; bDel.onclick=()=>{ const list=loadSnaps(); list.splice(idx,1); saveSnaps(list); renderSnapshots(); };
+    tdOps.append(bOpen,bDL,bDel);
+    tr.append(tdWhen,tdName,tdClient,tdOps);
+    snapshotsTable.appendChild(tr);
+  });
 }
 
 // QR
@@ -771,6 +994,11 @@ function pollURL(pollId, view = 'poll'){
     return u.toString();
   }
 }
+
+
+
+
+
 
 function ensurePollVotes(p){ p.votes = p.votes || {}; return p; }
 
@@ -910,6 +1138,32 @@ function setActivePage(targetId){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
+  // === Roster per-column sort buttons (Excel-like) ===
+  function setRosterSort(by, dir){
+    state.rosterSortBy  = by;
+    state.rosterSortDir = dir;
+    store.save(state);
+    updateRosterSortIndicators();
+    renderRosterList();
+  }
+  function updateRosterSortIndicators(){
+    const buttons = document.querySelectorAll('th .sort');
+    buttons.forEach(btn=>{
+      const key = btn.getAttribute('data-key');
+      const dir = btn.getAttribute('data-dir');
+      const on  = (key === (state.rosterSortBy||'name') && dir === (state.rosterSortDir||'asc'));
+      btn.classList.toggle('active', !!on);
+    });
+  }
+  document.addEventListener('click', (e)=>{
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('sort')){
+      const key = t.getAttribute('data-key');
+      const dir = t.getAttribute('data-dir');
+      setRosterSort(key, dir);
+    }
+  });
+
   const tabPublic = $('tabPublic');
   const tabCMS    = $('tabCMS');
 
@@ -923,28 +1177,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   publicPrizeEl=$('publicPrize'); statsRemain=$('statsRemain'); statsWinners=$('statsWinners'); statsPrizeLeft=$('statsPrizeLeft');
   batchGrid=$('currentBatch'); winnersChips=$('winnersChips');
   bgEl=$('bgEl'); logoEl=$('logoEl'); bannerEl=$('banner');
-
   // Embedded stage refs
   publicPrize2=$('publicPrize2'); batchGrid2=$('currentBatch2'); winnersChips2=$('winnersChips2');
   bgEl2=$('bgEl2'); logoEl2=$('logoEl2'); bannerEl2=$('banner2');
   openFullStageLink=$('openFullStage');
-
-    // Tablet stage refs
-  const publicPrize3 = $('publicPrize3');
-  const batchGrid3   = $('currentBatch3');
-  const winnersChips3= $('winnersChips3');
-  const bgEl3        = $('bgEl3');
-  const logoEl3      = $('logoEl3');
-  const bannerEl3    = $('banner3');
-
-  // Build a confetti engine for the tablet stage (hosted/sized to the stage)
-  const tabletStageEl = document.getElementById('tabletStage');
-  const confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl);
-
-  // Tablet fullscreen toggle
-  $('tabletFullscreen')?.addEventListener('click', ()=>{
-    const d=document.documentElement; d.requestFullscreen && d.requestFullscreen();
-  });
 
   // Ensure the public confetti canvas sits at <body> level (not inside .stage)
 const publicConfettiEl = $('confetti');
@@ -960,34 +1196,29 @@ confettiPublic = makeConfettiEngine($('confetti'));
 const embeddedStageEl = document.querySelector('#pageStage .stage');
 confettiStage = makeConfettiEngine($('confetti2'), embeddedStageEl);
 
+// Tablet embedded
+const tabletStageEl = document.querySelector('#tabletView .stage');
+confettiTablet = makeConfettiEngine($('confetti3'), tabletStageEl); // use the GLOBAL
+
 
   // sidebar + events
   eventList=$('eventList'); newEventName=$('newEventName'); newClientName=$('newClientName'); addEventBtn=$('addEvent');
-  // Clients cannot create events
-try {
-  const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
-  if (me && me.role === 'client' && addEventBtn) {
-    addEventBtn.disabled = true;
-    addEventBtn.title = '此帳號無權限建立活動';
-    const sbForm = document.querySelector('.sidebar-form');
-    if (sbForm) sbForm.style.display = 'none';
-  }
-} catch {}
-
   evTitle=$('evTitle'); evClient=$('evClient'); evDateTime=$('evDateTime'); evVenue=$('evVenue'); evAddress=$('evAddress'); evMapUrl=$('evMapUrl'); evBus=$('evBus'); evTrain=$('evTrain'); evParking=$('evParking'); evNotes=$('evNotes');
   currentEventName=$('currentEventName'); currentClient=$('currentClient'); currentIdLabel=$('currentIdLabel');
 
   // roster
   csvInput=$('csv'); btnPreset=$('preset'); btnExportCheckin=$('exportCheckin'); btnExportSession=$('exportSession'); importSessionInput=$('importSession');
   pageSelect=$('pageSelect'); searchInput=$('search'); pageSize2=$('pageSize2');
-
-  // roster pager
-  const prevPageBtn = $('prevPage');
-  const nextPageBtn = $('nextPage');
-  const pageHint    = $('pageHint');
-  const rosterCount = $('rosterCount');
-
   const addName = $('addName'), addDept = $('addDept'), addPresent = $('addPresent'), addPersonBtn = $('addPerson');
+
+  // Tablet stage refs
+  publicPrize3 = $('publicPrize3');
+  batchGrid3   = $('currentBatch3');
+  winnersChips3= $('winnersChips3');
+  bgEl3        = $('bgEl3');
+  logoEl3      = $('logoEl3');
+  bannerEl3    = $('banner3');
+
 
   addPersonBtn.addEventListener('click', ()=>{
   const name = (addName.value||'').trim();
@@ -1004,14 +1235,6 @@ try {
   addName.value=''; addDept.value=''; addPresent.checked=false;
   renderRosterList(); updatePublicPanel();
 });
-
-searchInput.addEventListener('input', ()=>{
-  state.rosterPage = 1;
-  store.save(state);
-  renderRosterList();
-});
-
-
   // prizes
   prizeRows=$('prizeRows'); prizeSearch=$('prizeSearch'); newPrizeName=$('newPrizeName'); newPrizeQuota=$('newPrizeQuota'); prizeFile=$('prizeFile'); importPrizesBtn=$('importPrizes');
 
@@ -1027,8 +1250,37 @@ searchInput.addEventListener('input', ()=>{
   // QR
   landingURL=$('landingURL'); copyURL=$('copyURL'); openLanding=$('openLanding'); qrBox=$('qrBox'); downloadQR=$('downloadQR'); landingLink=$('landingLink');
   
+  // NEW: load cloud events index so 活動管理 lists cloud events on fresh browsers
 
   state = store.load();
+  // Boot: pull event info from Firebase (if available) and merge into local state.
+(async ()=>{
+  try {
+    const eid =
+      (store.current && store.current()?.id) ||
+      state?.id ||
+      state?.eventId ||
+      '';
+    const eventId = String(eid).trim();
+    if (!eventId) return;
+
+    const info = await FB.get(`/events/${eventId}/info`);
+    if (info && typeof info === 'object') {
+      state.eventInfo = info;  // cloud is source of truth at boot
+      store.save(state);
+      renderAll();
+    }
+    if (!info || typeof info !== 'object' || info.error) {
+  console.warn('[Event info] bad response:', info);
+  return; // don't overwrite local with junk
+}
+
+  } catch (e) {
+    console.warn('Event info fetch failed:', e);
+  }
+})();
+
+
 
   // Events Manage tab elements
   emNewName = $('emNewName');
@@ -1054,6 +1306,13 @@ searchInput.addEventListener('input', ()=>{
   try {
     const eventId = store.current().id;
     const cloud = await FB.get(`/events/${eventId}/guests`) || {};
+    // guard: if Firebase returned an error or a non-object, don't merge
+if (!cloud || typeof cloud !== 'object' || cloud.error) {
+  console.warn('[Cloud guests] bad response:', cloud);
+  alert('無法讀取雲端名單（可能是權限或 eventId 錯誤）。請檢查 Firebase 讀取規則與目前活動 ID。');
+  return;
+}
+
     const mapKey = (x)=> `${(x.name||'').trim()}||${(x.dept||'').trim()}`;
     const localMap = new Map((state.people||[]).map(p=>[mapKey(p), p]));
 
@@ -1088,39 +1347,197 @@ searchInput.addEventListener('input', ()=>{
 })();
 
 
-emClone.addEventListener('click', async ()=>{
+emClone.addEventListener('click', ()=>{
   const proposed = (emCloneName.value || '').trim();
-  const finalName = proposed || (`${(window.store && window.store.current && window.store.current().name) || '活動'}（副本）`);
-  await cloneCurrentEvent(finalName);
-  // No local reload; page will navigate to ?event=<newId>
+  const finalName = proposed || (`${store.current().name || '活動'}（副本）`);
+  cloneCurrentEvent(finalName);
+  state = store.load();
+  emCloneName.value = '';
+  renderAll();
+  setActivePage('pageEventsManage');
 });
-
 
 emSearch.addEventListener('input', renderEventsTable);
 
+// ===== LOGIN (local only) =====
+(function initLocalLogin(){
+  const USERS_KEY = 'ldraw-users-v1';       // local storage key for users
+  const AUTH_KEY  = 'ldraw-auth-v1';        // who is logged in
 
-  // top tabs
-  tabPublic.addEventListener('click', ()=>{ tabPublic.classList.add('active'); tabCMS.classList.remove('active','primary'); cmsView.style.display='none'; publicView.style.display='block'; document.body.classList.add('public-mode'); });
-  tabCMS.addEventListener('click', ()=>{ tabCMS.classList.add('active','primary'); tabPublic.classList.remove('active'); publicView.style.display='none'; cmsView.style.display='block'; document.body.classList.remove('public-mode'); });
+  // helpers
+  const getUsers = () => {
+    try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; }
+    catch { return []; }
+  };
+  const saveUsers = (arr) => localStorage.setItem(USERS_KEY, JSON.stringify(arr));
+  const setAuth  = (u)   => localStorage.setItem(AUTH_KEY, JSON.stringify(u || null));
+  const getAuth  = () => {
+    try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; }
+  };
 
-  const tabTablet = $('tabTablet');
-const tabletView = $('tabletView');
+  // ensure a default admin/admin if none
+  (function ensureDefaultAdmin(){
+    let users = getUsers();
+    if (!Array.isArray(users) || users.length === 0 || !users.some(u => u.username === 'admin')) {
+      users = users.filter(Boolean);
+      users.push({ username:'admin', password:'admin', role:'admin', events:[] });
+      saveUsers(users);
+    }
+  })();
 
-if (tabTablet) {
-  tabTablet.addEventListener('click', ()=>{
-    // 類似公眾頁：不讓用戶看到 CMS
-    document.body.classList.add('tablet-mode');
-    // 顯示平板頁、隱藏其它
-    tabletView.style.display = 'block';
-    cmsView.style.display = 'none';
-    publicView.style.display = 'none';
+  // DOM
+  const gate   = document.getElementById('loginGate');
+  const form   = document.getElementById('loginForm');
+  const uEl    = document.getElementById('loginUser');
+  const pEl    = document.getElementById('loginPass');
+  const btn    = document.getElementById('btnLogin');
+
+  // guard: if any of these are missing, do nothing (won't break the app)
+  if (!gate || !form || !uEl || !pEl || !btn) return;
+
+  function applyRoleUI(role){
+    // role === 'client' can only see 名單 (pageRoster). Hide other nav items.
+    const navItems = document.querySelectorAll('#cmsNav .nav-item');
+    navItems.forEach(item => {
+      const target = item.getAttribute('data-target');
+      if (role === 'client') {
+        const visible = (target === 'pageRoster');  // only 名單
+        item.style.display = visible ? '' : 'none';
+        if (!visible) {
+          // also hide the subpage section if currently visible
+          const sec = document.getElementById(target);
+          if (sec) sec.style.display = 'none';
+        }
+      } else {
+        // admin: show all
+        item.style.display = '';
+      }
+    });
+
+    // If client is logged in, switch to CMS view and force 名單 tab active
+    if (role === 'client') {
+      // show CMS main container
+      document.getElementById('cmsView')?.setAttribute('style','');
+      // activate the 名單 tab
+      const rosterBtn = document.querySelector('#cmsNav .nav-item[data-target="pageRoster"]');
+      if (rosterBtn) {
+        // deactivate others
+        document.querySelectorAll('#cmsNav .nav-item').forEach(b => b.classList.remove('active'));
+        rosterBtn.classList.add('active');
+        // show roster page
+        document.querySelectorAll('.subpage').forEach(s => s.style.display = 'none');
+        document.getElementById('pageRoster').style.display = 'block';
+      }
+    }
+  }
+
+  function login(username, password){
+    const users = getUsers();
+    const u = users.find(x => x && x.username === username && x.password === password);
+    if (!u) return false;
+    setAuth({ username:u.username, role:u.role, events:u.events || [] });
+    applyRoleUI(u.role || 'admin');
+    // hide overlay
+    gate.classList.remove('show');
+    gate.style.display = 'none';
+    // optional: re-render anything that depends on role
+    if (typeof renderAll === 'function') renderAll();
+    return true;
+  }
+
+  // auto-restore session
+  (function restoreSession(){
+    const me = getAuth();
+    if (me && me.username) {
+      applyRoleUI(me.role || 'admin');
+      gate.classList.remove('show');
+      gate.style.display = 'none';
+      return;
+    }
+    // show gate
+    gate.classList.add('show');
+    gate.style.display = 'flex';
+  })();
+
+  // handle submit (click or Enter)
+  form.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const ok = login((uEl.value||'').trim(), (pEl.value||'').trim());
+    if (!ok) {
+      btn.disabled = false; // ensure it remains clickable
+      // quick inline feedback without alert()
+      btn.textContent = '登入失敗，重試';
+      setTimeout(()=> btn.textContent = '登入', 1200);
+    }
   });
+})();
+
+});
+
+// ---- Top tabs + routing (CMS / Public / Tablet)
+const tabTablet  = $('tabTablet');
+cmsView    = $('cmsView');
+publicView = $('publicView');
+tabletView = $('tabletView');
+
+function showCMS(){
+  document.body.classList.remove('tablet-mode','public-mode');
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  cmsView.style.display = 'block';
+  publicView.style.display = 'none';
+  tabletView.style.display = 'none';
+  location.hash = '#cms';
+  // kick layout so CSS safety applies immediately
+  window.dispatchEvent(new Event('resize'));
 }
 
-// 支援 URL 直接進入：index.html#tablet
-if (location.hash === '#tablet') {
-  $('tabTablet')?.click();
+function showPublic(){
+  document.body.classList.add('public-mode');
+  document.body.classList.remove('tablet-mode');
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  cmsView.style.display = 'none';
+  publicView.style.display = 'block';
+  tabletView.style.display = 'none';
+  location.hash = '#public';
+  window.dispatchEvent(new Event('resize'));
 }
+
+function showTablet(){
+  document.body.classList.add('tablet-mode');
+  document.body.classList.remove('public-mode');
+  cmsView.style.display = 'none';
+  publicView.style.display = 'none';
+  tabletView.style.display = 'flex';
+  location.hash = '#tablet';
+  // no auto-fullscreen here
+  window.dispatchEvent(new Event('resize'));
+}
+
+tabCMS?.addEventListener('click', showCMS);
+tabPublic?.addEventListener('click', showPublic);
+tabTablet?.addEventListener('click', showTablet);
+
+// Initial route (default to CMS to avoid accidental overlay)
+if (location.hash === '#tablet')      showTablet();
+else if (location.hash === '#public') showPublic();
+else                                  showCMS();
+
+window.addEventListener('hashchange', ()=>{
+  if (location.hash === '#tablet')      showTablet();
+  else if (location.hash === '#public') showPublic();
+  else                                  showCMS();
+});
+
+
+// Tablet: manual fullscreen button
+$('tabletFullscreen')?.addEventListener('click', ()=>{
+  const d = document.documentElement;
+  if (!document.fullscreenElement && d.requestFullscreen) {
+    d.requestFullscreen().catch(()=>{});
+  } else if (document.exitFullscreen) {
+    document.exitFullscreen().catch(()=>{});
+  }
+});
 
 // 綁定平板上的按鈕
 const tabletBatch = $('tabletBatch');
@@ -1132,16 +1549,9 @@ $('tabletDraw')?.addEventListener('click', ()=>{
 $('tabletCountdown')?.addEventListener('click', async ()=>{
   state.showPollOnly = false; store.save(state); updatePublicPanel();
   const n = Math.max(1, Number(tabletBatch?.value)||1);
-  await countdown(3, 700);
+  await countdown();
   n===1 ? drawOne() : drawBatch(n);
 });
-$('tabletCountdownBig')?.addEventListener('click', async ()=>{
-  state.showPollOnly = false; store.save(state); updatePublicPanel();
-  const n = Math.max(1, Number(tabletBatch?.value)||1);
-  await countdown(3, 700);
-  n===1 ? drawOne() : drawBatch(n);
-});
-
 
 
   // left nav subpages
@@ -1165,7 +1575,9 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
       parking: evParking.value||'',
       notes: evNotes.value||'',
     };
-    store.save(state); renderAll(); alert('已儲存活動資訊');
+    store.save(state); renderAll();
+    ;(()=>{ const eid = (store.current()?.id || '').trim(); if (!eid) return; FB.put(`/events/${eid}/info`, state.eventInfo).catch(()=>{}); })();
+    alert('已儲存活動資訊');
   });
 
   // assets
@@ -1229,52 +1641,137 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
     const rows=state.people.map(p=>`${safe(p.name)},${safe(p.dept)}`);
     const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='checkin.csv'; a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = 'checkin.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   });
   btnExportSession.addEventListener('click', ()=>{
     const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='lucky-draw-session.json'; a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = 'lucky-draw-session.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
   });
+// ---- CSV helpers (place once) ----
+function exportCSV(rows, filename){
+  const csv = rows.map(r => r.map(v => {
+    const s = (v == null ? '' : String(v)).replace(/"/g,'""');
+    return `"${s}"`;
+  }).join(',')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportWinnersCSV(){
+  const peopleIndex = new Map((state.people||[]).map(p => [ `${p.name}||${p.dept||''}`, p ]));
+  const rows = [
+    ['姓名','部門','桌號','座位','獎項','中獎時間','備註/碼']
+  ];
+  (state.winners || []).forEach(w => {
+    const key = `${w.name}||${w.dept||''}`;
+    const p = peopleIndex.get(key) || {};
+    rows.push([
+      w.name || '',
+      w.dept || '',
+      p.table || '',
+      p.seat  || '',
+      w.prizeName || w.prize || '',
+      w.time ? new Date(w.time).toLocaleString() : '',
+      p.code || ''
+    ]);
+  });
+  exportCSV(rows, 'winners_full.csv');
+}
+
+
+// ---- bind once, without declaring a duplicate const ----
+(function bindExportWinners(){
+  const el = document.getElementById('exportWinners');
+  if (!el) return;
+  // ensure we don't double-bind if this runs again
+  if (el.dataset.bound === '1') return;
+  el.dataset.bound = '1';
+  el.addEventListener('click', exportWinnersCSV);
+})();
+
+
   importSessionInput.addEventListener('change', e=>{
     const f=e.target.files?.[0]; if(!f) return;
     const r=new FileReader(); r.onload=()=>{ try{ const obj=JSON.parse(String(r.result)); state=Object.assign(baseState(), obj); store.save(state); renderAll(); }catch{ alert('JSON 格式錯誤'); } }; r.readAsText(f,'utf-8');
   });
+  // --- Export helpers + "Winners (full)" CSV ---
+
+
+
   $('newPage').addEventListener('click', ()=>{ const maxId=state.pages.reduce((m,p)=>Math.max(m,p.id),1); state.pages.push({id:maxId+1}); state.currentPage=maxId+1; store.save(state); renderAll(); });
-  pageSelect.addEventListener('change', ()=>{ state.currentPage=Number(pageSelect.value)||1; store.save(state); renderTiles(); });
-    pageSize2.addEventListener('input', e=>{
-    const val = Number(e.target.value) || 50;
-    state.pageSize   = Math.min(100, Math.max(10, val));
-    state.rosterPage = 1; // reset to first page whenever page size changes
-    store.save(state);
-    renderRosterList();
-  });
+  pageSelect.addEventListener('change', ()=>{
+  state.currentPage = Number(pageSelect.value) || 1;
+  store.save(state);
+  renderRosterList();
+  renderTiles(); // keep tiles in sync if you use them elsewhere
+});
 
-    prevPageBtn?.addEventListener('click', ()=>{
-    const size = Number(state.pageSize) || 50;
-    const total = (state.people || []).filter(p=>{
-      const q=(searchInput?.value||'').trim().toLowerCase();
-      return !q || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q);
-    }).length;
-    const pages = Math.max(1, Math.ceil(total / size));
-    state.rosterPage = Math.max(1, (state.rosterPage || 1) - 1);
-    store.save(state);
-    renderRosterList();
-  });
+pageSize2.addEventListener('input', (e)=>{
+  state.pageSize = Math.max(5, Math.min(100, Number(e.target.value) || 12));
+  store.save(state);
+  // when page size changes, reset to first page to avoid empty pages
+  state.currentPage = 1;
+  renderRosterList();
+  renderTiles();
+});
 
-  nextPageBtn?.addEventListener('click', ()=>{
-    const size = Number(state.pageSize) || 50;
-    const total = (state.people || []).filter(p=>{
-      const q=(searchInput?.value||'').trim().toLowerCase();
-      return !q || (p.name||'').toLowerCase().includes(q) || (p.dept||'').toLowerCase().includes(q);
-    }).length;
-    const pages = Math.max(1, Math.ceil(total / size));
-    state.rosterPage = Math.min(pages, (state.rosterPage || 1) + 1);
-    store.save(state);
-    renderRosterList();
-  });
+searchInput.addEventListener('input', ()=>{
+  state.currentPage = 1;
+  renderRosterList();
+  renderTiles();
+});
 
-  searchInput.addEventListener('input', renderTiles);
+// CMS 倒數抽獎：倒數 → 觸發現有 #draw → 對新卡片放彩帶（畫在 #confetti2）
+const countdownBtn = document.getElementById('countdownDraw');
+if (countdownBtn) countdownBtn.onclick = () => {
+  startCountdown('overlay2', 'count2', 3, () => {
+    document.getElementById('draw')?.click();     // 用你現有的抽獎流程
+    setTimeout(() => {
+      const grid  = document.getElementById('currentBatch2');
+      const cards = grid ? grid.querySelectorAll('.winner-card') : [];
+      const last  = cards[cards.length - 1];
+      if (last) blastConfettiAt(last, 'confetti2');
+    }, 60);
+  });
+};
+
+// 平板：大「倒數抽獎」按鈕
+const tabletBtn = document.getElementById('tabletCountdown');
+if (tabletBtn){
+  tabletBtn.onclick = () => {
+    startCountdown('overlay3', 'count3', 3, () => {
+      // use the existing CMS draw logic (keeps single source of truth)
+      document.getElementById('draw').click();
+
+      // confetti on the tablet grid
+      setTimeout(() => {
+        latestWinnerCards('currentBatch3').forEach(card => blastConfettiAt(card, 'confetti3'));
+      }, 80);
+    });
+  };
+}
+
+// Tablet: 倒數抽獎（huge button）
+const tabletCountdownBtn = document.getElementById('tabletCountdown');
+if (tabletCountdownBtn) tabletCountdownBtn.onclick = ()=> runCountdown('tablet');
 
   // prizes
   $('addPrize').addEventListener('click', ()=>{
@@ -1292,77 +1789,86 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
     store.save(state); renderAll(); alert(`已匯入 ${items.length} 項獎品`);
   });
 
-    // draw
-  btnDraw.addEventListener('click', ()=>{
-    state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
-    const n=Math.max(1, Number(batchCount.value)||1);
-    n===1 ? drawOne() : drawBatch(n);
+  
+  // draw
+btnDraw.addEventListener('click', ()=>{
+  state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
+  const n=Math.max(1, Number(batchCount.value)||1);
+  n===1 ? drawOne() : drawBatch(n);
+});
+btnCountdown.addEventListener('click', async ()=>{
+  state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
+  const n=Math.max(1, Number(batchCount.value)||1);
+  await countdown();
+  n===1 ? drawOne() : drawBatch(n);
+});
+  btnConfirm.addEventListener('click', ()=>{ if(!currentPick){ return; } const prize=currentPrize(); if(!prize){ alert('請選擇獎品'); return; }
+    state.remaining=state.remaining.filter(x=>!(x.name===currentPick.name && x.dept===currentPick.dept));
+    addWinnerRecords(prize,currentPick); state.lastConfirmed=currentPick; state.lastPick={prizeId:prize.id,people:[currentPick]}; state.currentBatch=[currentPick];
+    currentPick=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
+
+// Pull the cloud events index at boot so 活動管理/活動清單 show cloud events on fresh browsers
+;(async ()=>{
+  try{
+    await cloudPullEventsIndexIntoLocal();
+    state = store.load();   // refresh local state after merge
+    // (renderAll() is called later in boot; no need to call it here)
+  }catch(e){
+    console.warn('Cloud events index pull failed:', e);
+  }
+})();
+
+
+// CMS: burst on the actual winner card(s)
+fireOnCards(document.getElementById('currentBatch2'), confettiStage);
+
+// Tell the Public window to burst on its cards too
+try { bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() }); } catch {}
+
+
   });
-  btnCountdown.addEventListener('click', async ()=>{
-    state.showPollOnly = false; store.save(state); updatePublicPanel();  // ← ADD
-    const n=Math.max(1, Number(batchCount.value)||1);
-    await countdown();
-    n===1 ? drawOne() : drawBatch(n);
-  });
-  btnConfirm.addEventListener('click', ()=>{
-    if(!currentPick){ return; }
-    const prize = currentPrize();
-    if(!prize){ alert('請選擇獎品'); return; }
-
-    // persist winner
-    state.remaining = state.remaining.filter(x => !(x.name===currentPick.name && x.dept===currentPick.dept));
-    addWinnerRecords(prize, currentPick);
-    state.lastConfirmed = currentPick;
-    state.lastPick = { prizeId: prize.id, people: [currentPick] };
-    state.currentBatch = [currentPick];
-
-    // finalize + re-render
-    currentPick = null;
-    rebuildRemainingFromPeople();
-    store.save(state);
-    renderAll();
-
-    // --- CONFETTI: CMS embedded stage
-    const cmsGrid = document.getElementById('currentBatch2');
-    if (cmsGrid && typeof confettiStage !== 'undefined' && confettiStage) {
-      fireOnCards(cmsGrid, confettiStage);
-    }
-
-    // --- CONFETTI: Tablet stage
-    const tbGrid = document.getElementById('currentBatch3');
-    if (tbGrid && typeof confettiTablet !== 'undefined' && confettiTablet) {
-      fireOnCards(tbGrid, confettiTablet);
-    }
-
-    // --- NOTIFY: Public/fullscreen windows to burst too
-    try {
-      bc && bc.postMessage({ type:'DRAW_BURST', ts: Date.now() });
-    } catch {}
-  });
-
   btnUndo.addEventListener('click', ()=>{
     const lp=state.lastPick; if(!lp) return;
     const prize=state.prizes.find(x=>x.id===lp.prizeId); if(!prize) return;
     lp.people.forEach(person=>{ removeWinnerRecords(prize, person); state.remaining.push(person); });
     state.currentBatch=[]; state.lastPick=null; state.lastConfirmed=null; rebuildRemainingFromPeople(); store.save(state); renderAll();
   });
-  btnExportWinners.addEventListener('click', ()=>{
-    const header='name,dept,prize,time\n';
-    const rows=state.winners.map(w=>`${safe(w.name)},${safe(w.dept)},${safe(w.prizeName||'')},${w.time}`);
-    const blob=new Blob([header+rows.join('\n')],{type:'text/csv'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='winners.csv'; a.click(); URL.revokeObjectURL(url);
-  });
+
+  // after your current '#draw' logic runs and DOM updates:
+setTimeout(() => {
+  latestWinnerCards('currentBatch2').forEach(card => blastConfettiAt(card, 'confetti2'));
+}, 80);
+
 
   $('clearStage').addEventListener('click', ()=>{
   // 清掉當前舞台卡片（下一輪抽之前讓舞台乾淨）
   state.currentBatch = [];
-  state.lastConfirmed = null;      // 可選：一併清掉最後確認
+  state.lastConfirmed = null;
+  state.lastPick = null;                 // ← 關鍵：不要保留上一輪狀態
+  state.showPollOnly = false;            // ← 關鍵：退出「投票 QR only」模式
   store.save(state);
+  updatePublicPanel();                   // 立即刷新舞台
   renderAll();
 
-  // 告知其他視窗（如公眾頁）立即刷新
-  try { bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() }); } catch {}
+  // 告知其他視窗（如公眾頁）切回抽獎畫面並刷新
+  try { 
+    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
+    bc && bc.postMessage({ type:'TICK', reason:'clearStage', ts: Date.now() });
+  } catch {}
+});
+
+  $('clearBatch')?.addEventListener('click', ()=>{
+  state.currentBatch = [];
+  state.lastConfirmed = null;
+  state.lastPick = null;
+  state.showPollOnly = false;
+  store.save(state);
+  updatePublicPanel();
+  renderAll();
+  try {
+    bc && bc.postMessage({ type:'SHOW_DRAW', ts: Date.now() });
+    bc && bc.postMessage({ type:'TICK', reason:'clearBatch', ts: Date.now() });
+  } catch {}
 });
 
   // storage
@@ -1381,62 +1887,27 @@ $('tabletCountdownBig')?.addEventListener('click', async ()=>{
   $('fullscreen').addEventListener('click', ()=>{ const d=document.documentElement; d.requestFullscreen && d.requestFullscreen(); });
 
   renderAll();
-});
+
 
 function renderEventList(){
   eventList.innerHTML='';
-
-  // Who is logged in? (local session written by login.js)
-  let isClient = false, allowed = null;
-  try {
-    const me = JSON.parse(localStorage.getItem('ldraw-auth-v1'));
-    isClient = !!(me && me.role === 'client');
-    allowed = Array.isArray(me && me.events) ? me.events : null;  // e.g. ["gala2025","jp-oct-show"]
-  } catch {}
-
-  // Build the visible list (clients see only allowed events)
-  const visible = store.list()
-    .filter(it => it.listed)
-    .filter(it => !isClient || !allowed || allowed.length === 0 || allowed.includes(it.id));
-
-  // Render the list
-  visible.forEach(({id,name,client})=>{
-    const item=document.createElement('div');
-    item.className='event-item'+(id===store.current().id?' active':'');
-    item.innerHTML =
-      `<div class="event-name">${name||'（未命名）'}</div>`+
-      `<div class="event-meta">客戶：${client||'—'}</div>`+
-      `<div class="event-meta">ID: ${id}</div>`;
-    item.onclick=()=>{
-      // safety: even if the element is somehow shown, block disallowed switch
-      if (isClient && allowed && allowed.length && !allowed.includes(id)) {
-        alert('此帳號無權限訪問該活動');
-        return;
-      }
-      if(id===store.current().id) return;
-      if(confirm('切換至另一活動？未儲存的修改將遺失。')){
-        store.switch(id);
-        state = store.load();
-        renderAll();
-      }
-    };
-    eventList.appendChild(item);
-  });
-
-  // If client and current event is not allowed, auto-switch to first allowed (if any)
-  if (isClient && allowed && allowed.length) {
-    const cur = store.current();
-    if (!cur || !allowed.includes(cur.id)) {
-      const first = visible[0];
-      if (first) {
-        store.switch(first.id);
-        state = store.load();
-        renderAll();
-      }
-    }
-  }
+  store.list()
+    .filter(it => it.listed) // only show events marked to list
+    .forEach(({id,name,client})=>{
+      const item=document.createElement('div');
+      item.className='event-item'+(id===store.current().id?' active':'');
+      item.innerHTML =
+        `<div class="event-name">${name||'（未命名）'}</div>`+
+        `<div class="event-meta">客戶：${client||'—'}</div>`+
+        `<div class="event-meta">ID: ${id}</div>`;
+      item.onclick=()=>{ if(id===store.current().id) return;
+        if(confirm('切換至另一活動？未儲存的修改將遺失。')){
+          store.switch(id); state=store.load(); renderAll();
+        }
+      };
+      eventList.appendChild(item);
+    });
 }
-
 
     function renderRerollList(){
   const tbody = document.getElementById('rerollRows');
@@ -1476,6 +1947,7 @@ function renderEventList(){
     tr.append(tdTime, tdPrize, tdSwap, tdOps);
     tbody.appendChild(tr);
   });
+  updateRosterSortIndicators();
 }
     function undoReroll(rrId){
   state.rerolls = state.rerolls || [];
@@ -1523,34 +1995,64 @@ function deleteReroll(rrId){
 
 function renderRosterList(){
   const tbody = document.getElementById('rosterRows');
-  const pageHint = document.getElementById('pageHint');
-  const rosterCount = document.getElementById('rosterCount');
-  const prevPageBtn = document.getElementById('prevPage');
-  const nextPageBtn = document.getElementById('nextPage');
-
   if (!tbody) return;
   tbody.innerHTML = '';
 
+  // --- search filter (unchanged) ---
   const q = (searchInput?.value || '').trim().toLowerCase();
-  const all = (state.people || []);
-  const filtered = all.filter(p =>
+  let list = (state.people || []).filter(p =>
     (!q) ||
     (p.name||'').toLowerCase().includes(q) ||
     (p.dept||'').toLowerCase().includes(q)
   );
 
-  const size  = Number(state.pageSize) || 50;
-  const pages = Math.max(1, Math.ceil(filtered.length / size));
-  state.rosterPage = Math.min(Math.max(1, state.rosterPage || 1), pages);
+  // --- FULL-LIST SORT (NEW) ---
+  // You can set state.rosterSortBy to one of: 'name' | 'dept' | 'table' | 'seat' | 'code'
+  // and state.rosterSortDir to 'asc' | 'desc' elsewhere in your UI if needed.
+  const sortBy  = state.rosterSortBy  || 'name';
+  const sortDir = state.rosterSortDir || 'asc';
+  const dir = sortDir === 'desc' ? -1 : 1;
 
-  const start = (state.rosterPage - 1) * size;
-  const end   = Math.min(filtered.length, start + size);
-  const pageItems = filtered.slice(start, end);
+  const getVal = (p) => {
+    if (sortBy === 'table') return (p.table ?? '');
+    if (sortBy === 'seat')  return (p.seat  ?? '');
+    if (sortBy === 'dept')  return (p.dept  ?? '');
+    if (sortBy === 'code')  return (p.code  ?? '');
+    return (p.name ?? ''); // default
+  };
+  list = list.slice().sort((a,b)=>{
+    const av = getVal(a);
+    const bv = getVal(b);
+    // numeric compare if both are numbers, else string compare (case-insensitive)
+    const aNum = typeof av === 'number' || (/^\d+$/).test(String(av));
+    const bNum = typeof bv === 'number' || (/^\d+$/).test(String(bv));
+    if (aNum && bNum){
+      const na = Number(av), nb = Number(bv);
+      if (na < nb) return -1*dir;
+      if (na > nb) return  1*dir;
+      return 0;
+    }
+    const sa = String(av).toLowerCase();
+    const sb = String(bv).toLowerCase();
+    if (sa < sb) return -1*dir;
+    if (sa > sb) return  1*dir;
+    return 0;
+  });
 
   const eventId = store.current().id;
 
-  // ---- rows for current page
-  pageItems.forEach((p)=>{
+  // --- PAGINATION after sorting (NEW) ---
+  const pageSize = Math.max(5, Math.min(100, Number(state.pageSize) || 12));
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  if (!state.currentPage || state.currentPage > totalPages) {
+    state.currentPage = 1;
+    store.save(state);
+  }
+  const start = (state.currentPage - 1) * pageSize;
+  const page = list.slice(start, start + pageSize);
+
+  // --- RENDER current page (keeps your original row building & cloud sync) ---
+  page.forEach((p)=>{
     const tr = document.createElement('tr');
 
     // --- code
@@ -1606,7 +2108,9 @@ function renderRosterList(){
     tableIn.onchange = ()=>{
       p.table = (tableIn.value || '').trim();
       store.save(state);
-      if (p.code) FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { table: p.table }).catch(()=>{});
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { table: p.table }).catch(()=>{});
+      }
     };
     tdTable.appendChild(tableIn);
 
@@ -1618,7 +2122,9 @@ function renderRosterList(){
     seatIn.onchange = ()=>{
       p.seat = (seatIn.value || '').trim();
       store.save(state);
-      if (p.code) FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { seat: p.seat }).catch(()=>{});
+      if (p.code) {
+        FB.patch(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, { seat: p.seat }).catch(()=>{});
+      }
     };
     tdSeat.appendChild(seatIn);
 
@@ -1646,6 +2152,9 @@ function renderRosterList(){
         }).catch(()=>{});
       }
     };
+
+
+
 
     tdStatus.appendChild(badge);
 
@@ -1675,7 +2184,6 @@ function renderRosterList(){
       store.save(state);
       renderRosterList();
       updatePublicPanel();
-      // (optional) cloud delete
       // if (p.code) FB.put(`/events/${eventId}/guests/${encodeURIComponent(p.code)}`, null).catch(()=>{});
     };
 
@@ -1684,39 +2192,8 @@ function renderRosterList(){
     tr.append(tdCode, tdName, tdDept, tdTable, tdSeat, tdStatus, tdOps);
     tbody.appendChild(tr);
   });
-
-  // ---- pager status + buttons
-  if (pageHint) pageHint.textContent = `第 ${pages === 0 ? 1 : state.rosterPage} / ${pages || 1} 頁`;
-  if (rosterCount) {
-    const from = filtered.length ? (start + 1) : 0;
-    const to   = end;
-    rosterCount.textContent = `共 ${filtered.length} 人 · 顯示 ${from}–${to}`;
-  }
-  if (prevPageBtn) prevPageBtn.disabled = (state.rosterPage <= 1);
-  if (nextPageBtn) nextPageBtn.disabled = (state.rosterPage >= pages);
+  updateRosterSortIndicators();
 }
-
-
-// === Sorting logic for roster ===
-let rosterSort = { field: null, asc: true };
-
-document.addEventListener('click', e=>{
-  const btn = e.target.closest('.sortBtn');
-  if (!btn) return;
-  const field = btn.dataset.field;
-  if (rosterSort.field === field) rosterSort.asc = !rosterSort.asc;
-  else { rosterSort.field = field; rosterSort.asc = true; }
-
-  state.people.sort((a,b)=>{
-    const va = (a[field] ?? '').toString().toLowerCase();
-    const vb = (b[field] ?? '').toString().toLowerCase();
-    if (va < vb) return rosterSort.asc ? -1 : 1;
-    if (va > vb) return rosterSort.asc ? 1 : -1;
-    return 0;
-  });
-  store.save(state);
-  renderRosterList();
-});
 
 
     function renderEventsTable(){
@@ -1786,6 +2263,7 @@ document.addEventListener('click', e=>{
         saveAll(all);
         renderEventsTable();
         renderEventList();
+        cloudUpsertEventMeta(id);
       }
     };
 
@@ -1798,6 +2276,7 @@ document.addEventListener('click', e=>{
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
+      cloudUpsertEventMeta(newId);
     };
 
     const deleteBtn = document.createElement('button');
@@ -1813,6 +2292,7 @@ document.addEventListener('click', e=>{
       state = store.load();
       renderAll();
       setActivePage('pageEventsManage');
+      cloudDeleteEvent(id);
     };
 
     tdOps.append(switchBtn, saveBtn, duplicateBtn, deleteBtn);
@@ -2085,6 +2565,7 @@ if (publishNow) publishNow.onclick = async ()=>{
 }
 
 
+
 // clone another event by id
 function cloneSpecificEvent(sourceId, newName){
   const all = loadAll();
@@ -2167,187 +2648,3 @@ function renderAll(){
 
   if(!document.querySelector('.nav-item.active')) setActivePage('pageEvent');
 }
-
-/* === Users (Firebase RTDB) : Create / List / Delete ======================== */
-/* This block is self-contained and uses the Firebase compat SDK you already
-   initialize in index.html (window.rtdb). It also gracefully no-ops if that
-   SDK is not present. */
-
-(function initUsersPage(){
-  // Bail if Firebase isn’t available or the page section doesn’t exist
-  const hasFB = !!(window.rtdb && window.firebase);
-  const section = document.getElementById('pageUsers');
-  if (!section) return;
-
-  const els = {
-    email: document.getElementById('newUserEmail'),
-    pass:  document.getElementById('newUserPassword'),
-    role:  document.getElementById('newUserRole'),
-    btn:   document.getElementById('createUser'),
-    table: document.getElementById('userTable')
-  };
-
-  // Hard guard: prevent using this page if Firebase is not configured
-  function guardFirebase(){
-    if (hasFB) return true;
-    if (els.btn) {
-      els.btn.disabled = true;
-      els.btn.title = 'Firebase 尚未初始化（請先在 index.html 填入 Firebase 設定）';
-    }
-    return false;
-  }
-
-  // Render the table rows from a /users snapshot object
-    function renderUsers(obj){
-      if (!els.table) return;
-      els.table.innerHTML = '';
-      const users = Object.values(obj || {});
-      if (users.length === 0) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="4" class="pill">尚未建立用戶</td>`;
-        els.table.appendChild(tr);
-        return;
-      }
-      users.forEach(u=>{
-        const eventsStr = Array.isArray(u.events) ? u.events.join(',') : '';
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${u.email || ''}</td>
-          <td>${u.role  || 'client'}</td>
-          <td>
-            <div class="bar" style="gap:6px; align-items:center">
-              <span class="pill" data-evlist="${u.id || ''}">${eventsStr || '(未設定)'}</span>
-              <button class="btn" data-edit-events="${u.id || ''}">編輯授權</button>
-            </div>
-          </td>
-          <td><button class="btn danger" data-del="${u.id||''}">刪除</button></td>`;
-        els.table.appendChild(tr);
-      });
-    }
-
-  // Read once (or when re-entering the tab)
-  async function loadUsers(){
-    if (!guardFirebase()) return;
-    const snap = await rtdb.ref('/users').once('value');
-    renderUsers(snap.val() || {});
-  }
-
-  // Live updates (optional but nice): keep the table in sync while on the tab
-  let usersListenerOn = false;
-  function attachLiveListener(){
-    if (!guardFirebase() || usersListenerOn) return;
-    usersListenerOn = true;
-    rtdb.ref('/users').on('value', (snap)=> renderUsers(snap.val() || {}));
-  }
-  function detachLiveListener(){
-    if (!guardFirebase() || !usersListenerOn) return;
-    usersListenerOn = false;
-    rtdb.ref('/users').off();
-  }
-  // Helper: return a list of event IDs currently in the sidebar DOM (fallback to [])
-  function getAllEventIdsFromUI(){
-    const ids = [];
-    document.querySelectorAll('.event-item').forEach(item=>{
-      const id = item.getAttribute('data-id') || item.dataset.id || item.dataset.eid || '';
-      if (id && !ids.includes(id)) ids.push(id);
-    });
-    return ids;
-  }
-
-  // Create user (stores **email, password (plain), role, events:[]**)
-  async function createUser(){
-    if (!guardFirebase()) return;
-    const email = (els.email?.value || '').trim();
-    const pass  = (els.pass?.value  || '').trim();
-    const role  = (els.role?.value  || 'client');
-
-    if (!email || !pass) { alert('請輸入帳號與密碼'); return; }
-
-    // push-like id
-    const id = rtdb.ref('/users').push().key;
-    await rtdb.ref(`/users/${id}`).set({ id, email, password: pass, role, events: [] });
-
-    // clear inputs
-    if (els.email) els.email.value = '';
-    if (els.pass)  els.pass.value  = '';
-    if (els.role)  els.role.value  = 'client';
-
-    // refresh (render will also run by live listener if attached)
-    await loadUsers();
-    alert('✅ 已建立用戶');
-  }
-
-  // Delete user
-  document.addEventListener('click', async (evt)=>{
-    const btn = evt.target.closest('button[data-del]');
-    if (!btn) return;
-    if (!guardFirebase()) return;
-    const id = btn.getAttribute('data-del');
-    if (!id) return;
-    if (!confirm('確定刪除此用戶？')) return;
-    await rtdb.ref(`/users/${id}`).set(null);
-    // live listener updates table; also force refresh
-    await loadUsers();
-  });
-
-  // Edit per-user allowed events
-document.addEventListener('click', async (e)=>{
-  const btn = e.target.closest('button[data-edit-events]');
-  if (!btn) return;
-  if (!guardFirebase()) return;
-
-  const id = btn.getAttribute('data-edit-events');
-  if (!id) return;
-
-  // Read current user
-  const snap = await rtdb.ref(`/users/${id}`).once('value');
-  const user = snap.val() || {};
-  const current = Array.isArray(user.events) ? user.events : [];
-
-  // Build a hint string of available event IDs from the sidebar DOM
-  const available = getAllEventIdsFromUI();
-  const hint = available.length ? `（可用：${available.join(', ')}）` : '';
-
-  // Prompt for comma-separated event IDs
-  const nextStr = prompt(`輸入此用戶可訪問的活動ID（逗號分隔）${hint}`, current.join(','));
-  if (nextStr === null) return; // cancelled
-
-  const next = nextStr.split(',')
-    .map(s=>s.trim())
-    .filter(Boolean);
-
-  await rtdb.ref(`/users/${id}/events`).set(next);
-  // Update the visible text
-  const pill = document.querySelector(`[data-evlist="${id}"]`);
-  if (pill) pill.textContent = next.length ? next.join(',') : '(未設定)';
-});
-
-  // Wire the create button
-  if (els.btn) els.btn.addEventListener('click', createUser);
-
-  // Load users the first time this subpage becomes visible
-  // Your CMS left-nav uses .nav-item[data-target], so hook that:
-  const nav = document.getElementById('cmsNav');
-  if (nav) {
-    nav.addEventListener('click', (e)=>{
-      const b = e.target.closest('.nav-item');
-      if (!b) return;
-      const target = b.getAttribute('data-target');
-      if (target === 'pageUsers') {
-        loadUsers();
-        attachLiveListener();
-      } else {
-        // leaving the page — optional: stop listening
-        detachLiveListener();
-      }
-    });
-  }
-
-  // If the page is already visible at load (rare), render once.
-  if (section.style.display !== 'none') {
-    loadUsers();
-    attachLiveListener();
-  }
-
-  
-})();
